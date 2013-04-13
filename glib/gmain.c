@@ -1146,6 +1146,9 @@ g_source_attach_unlocked (GSource      *source,
  * Adds a #GSource to a @context so that it will be executed within
  * that context. Remove it by calling g_source_destroy().
  *
+ * If another thread has acquired the context and is blocked polling it,
+ * that thread is woken up from the poll.
+ *
  * Return value: the ID (greater than 0) for the source within the 
  *   #GMainContext. 
  **/
