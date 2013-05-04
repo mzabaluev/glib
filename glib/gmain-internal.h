@@ -47,6 +47,13 @@ GSource *_g_main_create_unix_signal_watch (int signum);
 extern gboolean _g_main_poll_debug;
 #endif
 
+extern GMainContextFuncs _g_main_poll_context_funcs;
+
+/* Functions supporting poll-centric API on GMainContext */
+void      _g_main_compat_set_poll_func (gpointer backend_data,
+                                        GPollFunc func);
+GPollFunc _g_main_compat_get_poll_func (gpointer backend_data);
+
 G_END_DECLS
 
 #endif /* __G_MAIN_H__ */

@@ -50,6 +50,44 @@ typedef enum /*< flags >*/
 typedef struct _GMainContext            GMainContext;
 
 /**
+ * GMainContextFuncs:
+ * @create: Called to allocate and initialize backend data
+ *     for a main loop context.
+ * @set_context: Called to associate the context with the main loop backend.
+ * @free: Called to free the data of the main loop context backend.
+ * @acquire: Called to acquire ownership of the main loop context
+ *     for the calling thread, as done by g_main_context_acquire().
+ *     The implementation can return %TRUE if exclusive use of the main
+ *     loop facility for the calling thread is ascertained.
+ *     The function pointer can be null, which is equivalent to returning
+ *     %FALSE.
+ * @release: Called to release ownership of the previously acquired
+ *     main loop context. The function pointer can be null.
+ * @run: Called to run the main loop until the @quit function is called.
+ * @quit: Called to quit the main loop.
+ * @is_running: Called to check if the main loop is currently running.
+ * @iterate: Called to perform a single iteration step.
+ *     Main loop implementations not supporting single step iteration
+ *     can set the function pointer to null. If this function is implemented,
+ *     @run, @quit, and @is_running, in turn, may be null.
+ *     Main loops not supporting single step iteration have reduced
+ *     functionality: calling g_main_context_iteration(),
+ *     g_main_context_pending(), or attempts to run the main context
+ *     recursively with g_main_loop_run() will produce critical warnings
+ *     and fail to process any sources.
+ * @add_fd: Called to register a file descriptor at the poll facility.
+ *     The priority value can be ignored or used for optimization.
+ * @modify_fd: Called to modify polling information on a previously
+ *     registered file descriptor.
+ *     The priority value can be ignored or used for optimization.
+ * @remove_fd: Called when a file descriptor is removed from the poll.
+ *
+ * The <structname>GMainContextFuncs</structname> structure contains a table
+ * of functions used to implement a #GMainContext backend.
+ */
+typedef struct _GMainContextFuncs       GMainContextFuncs;
+
+/**
  * GMainLoop:
  *
  * The <structname>GMainLoop</structname> struct is an opaque data type
@@ -168,6 +206,31 @@ typedef gboolean (*GSourceFunc)       (gpointer user_data);
 typedef void     (*GChildWatchFunc)   (GPid     pid,
                                        gint     status,
                                        gpointer user_data);
+
+struct _GMainContextFuncs
+{
+  gpointer (*create)      (gpointer user_data);
+  void     (*set_context) (gpointer      backend_data,
+                           GMainContext *context);
+  void     (*free)        (gpointer backend_data);
+  gboolean (*acquire)     (gpointer backend_data);
+  void     (*release)     (gpointer backend_data);
+  void     (*run)         (gpointer backend_data);
+  void     (*quit)        (gpointer backend_data);
+  gboolean (*is_running)  (gpointer backend_data);
+  gboolean (*iterate)     (gpointer backend_data, gboolean block);
+  void     (*add_fd)      (gpointer backend_data,
+                           gint     fd,
+                           gushort  events,
+                           gint     priority);
+  void     (*modify_fd)   (gpointer backend_data,
+                           gint     fd,
+                           gushort  events,
+                           gint     priority);
+  void     (*remove_fd)   (gpointer backend_data,
+                           gint     fd);
+};
+
 struct _GSource
 {
   /*< private >*/
@@ -332,6 +395,9 @@ GSource      *g_main_context_find_source_by_funcs_user_data (GMainContext *conte
 
 /* Low level functions for implementing custom main loops.
  */
+GLIB_AVAILABLE_IN_2_38
+GMainContext *g_main_context_new_custom (GMainContextFuncs *funcs,
+                                         gpointer user_data);
 GLIB_AVAILABLE_IN_ALL
 void     g_main_context_wakeup  (GMainContext *context);
 GLIB_AVAILABLE_IN_ALL
@@ -354,6 +420,11 @@ gint     g_main_context_query    (GMainContext *context,
                                   gint         *timeout_,
                                   GPollFD      *fds,
                                   gint          n_fds);
+GLIB_AVAILABLE_IN_2_38
+void     g_main_context_reset_compat_polls (GMainContext *context,
+                                            gint max_priority);
+GLIB_AVAILABLE_IN_2_38
+gint     g_main_context_get_poll_timeout   (GMainContext *context);
 GLIB_AVAILABLE_IN_ALL
 gint     g_main_context_check    (GMainContext *context,
                                   gint          max_priority,
