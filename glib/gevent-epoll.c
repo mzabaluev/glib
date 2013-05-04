@@ -62,7 +62,8 @@ g_epoll_event_context_new ()
   GEpollContext *context;
 
   context = (GEpollContext *)
-      g_event_context_new (&g_epoll_context_funcs, sizeof(GEpollContext));
+      g_event_context_new_custom (&g_epoll_context_funcs,
+                                  sizeof(GEpollContext));
 
   context->epoll_fd = epoll_create (1);
 

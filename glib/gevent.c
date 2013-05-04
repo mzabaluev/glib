@@ -55,8 +55,8 @@ static void g_event_context_remove_poll_unlocked (GEventContext *context,
                                                   GPollFD       *fd);
 
 GEventContext *
-g_event_context_new (GEventContextFuncs *funcs,
-                     gsize struct_size)
+g_event_context_new_custom (GEventContextFuncs *funcs,
+                            gsize struct_size)
 {
   GEventContext *context;
   GEventContextPrivate *priv;
