@@ -131,6 +131,10 @@ libglib_2_0_la_SOURCES = 	\
 	gdir.c			\
 	genviron.c		\
 	gerror.c		\
+	gevent.c		\
+	gevent-epoll.c		\
+	gevent.h		\
+	geventprivate.h		\
 	gfileutils.c		\
 	ggettext.c		\
 	ghash.c			\
