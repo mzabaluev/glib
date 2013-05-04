@@ -1058,12 +1058,14 @@ int main ()
 AC_MSG_RESULT($glib_ssize_type)
 
 # Check for some functions
-AC_CHECK_FUNCS(lstat strerror strsignal memmove vsnprintf stpcpy strcasecmp strncasecmp poll getcwd vasprintf setenv unsetenv getc_unlocked readlink symlink fdwalk memmem)
+AC_CHECK_FUNCS(lstat strerror strsignal memmove vsnprintf stpcpy strcasecmp strncasecmp getcwd vasprintf setenv unsetenv getc_unlocked readlink symlink fdwalk memmem)
 AC_CHECK_FUNCS(chown lchmod lchown fchmod fchown link utimes getgrgid getpwuid getresuid)
 AC_CHECK_FUNCS(getmntent_r setmntent endmntent hasmntopt getfsstat getvfsstat)
 # Check for high-resolution sleep functions
 AC_CHECK_FUNCS(splice)
 AC_CHECK_FUNCS(prlimit)
+# Check for poll functions
+AC_CHECK_FUNCS(poll epoll_create1)
 
 # To avoid finding a compatibility unusable statfs, which typically
 # successfully compiles, but warns to use the newer statvfs interface:

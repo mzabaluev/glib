@@ -29,6 +29,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <fcntl.h>
 #include <errno.h>
 
 #include "ghash.h"
@@ -67,7 +68,11 @@ _g_epoll_event_context_new (void)
 
   context->poll_records = g_hash_table_new (g_direct_hash, g_direct_equal);
 
+#ifdef HAVE_EPOLL_CREATE1
+  context->epoll_fd = epoll_create1 (EPOLL_CLOEXEC);
+#else
   context->epoll_fd = epoll_create (1);
+#endif
 
   if (G_UNLIKELY (context->epoll_fd < 0))
     {
@@ -75,6 +80,19 @@ _g_epoll_event_context_new (void)
       g_event_context_unref ((GEventContext *) context);
       return NULL;
     }
+
+#ifndef HAVE_EPOLL_CREATE1
+  {
+    int flags;
+
+    flags = fcntl (context->epoll_fd, F_GETFD);
+    if (flags >= 0)
+      {
+        flags |= FD_CLOEXEC;
+        fcntl (context->epoll_fd, F_SETFD, flags);
+      }
+  }
+#endif
 
   return (GEventContext *) context;
 }
