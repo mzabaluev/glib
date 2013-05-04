@@ -28,6 +28,16 @@
 
 G_BEGIN_DECLS
 
+typedef enum /*< flags >*/
+{
+  G_IO_IN       GLIB_SYSDEF_POLLIN,
+  G_IO_OUT      GLIB_SYSDEF_POLLOUT,
+  G_IO_PRI      GLIB_SYSDEF_POLLPRI,
+  G_IO_ERR      GLIB_SYSDEF_POLLERR,
+  G_IO_HUP      GLIB_SYSDEF_POLLHUP,
+  G_IO_NVAL     GLIB_SYSDEF_POLLNVAL
+} GIOCondition;
+
 /* Any definitions using GPollFD or GPollFunc are primarily
  * for Unix and not guaranteed to be the compatible on all
  * operating systems on which GLib runs. Right now, the
