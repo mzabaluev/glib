@@ -65,16 +65,16 @@ _g_epoll_event_context_new (void)
       g_event_context_new_custom (&g_epoll_context_funcs,
                                   sizeof(GEpollContext));
 
+  context->poll_records = g_hash_table_new (g_direct_hash, g_direct_equal);
+
   context->epoll_fd = epoll_create (1);
 
   if (G_UNLIKELY (context->epoll_fd < 0))
     {
       g_critical ("epoll_create failed: %s", g_strerror(errno));
-      g_slice_free (GEpollContext, context);
+      g_event_context_unref ((GEventContext *) context);
       return NULL;
     }
-
-  context->poll_records = g_hash_table_new (g_direct_hash, g_direct_equal);
 
   return (GEventContext *) context;
 }
@@ -90,7 +90,8 @@ g_epoll_context_finalize (GEventContext *base_context)
 {
   GEpollContext *context = (GEpollContext *) base_context;
 
-  close (context->epoll_fd);
+  if (context->epoll_fd >= 0)
+    close (context->epoll_fd);
 
   g_hash_table_foreach (context->poll_records, free_poll_record, NULL);
   g_hash_table_destroy (context->poll_records);
