@@ -23,7 +23,7 @@
 
 #ifdef HAVE_SYS_EPOLL_H
 
-#include "gevent.h"
+#include "gevent-epoll.h"
 
 #include <sys/epoll.h>
 #ifdef HAVE_UNISTD_H
@@ -57,7 +57,7 @@ static GEventContextFuncs g_epoll_context_funcs =
     };
 
 GEventContext *
-g_epoll_event_context_new ()
+_g_epoll_event_context_new (void)
 {
   GEpollContext *context;
 

@@ -65,8 +65,12 @@ struct _GEventContext
 };
 
 GLIB_AVAILABLE_IN_2_38
-GEventContext *g_event_context_new_custom   (GEventContextFuncs *funcs,
-                                             gsize struct_size);
+GEventContext *g_event_context_default (void);
+GLIB_AVAILABLE_IN_2_38
+GEventContext *g_event_context_new (void);
+GLIB_AVAILABLE_IN_2_38
+GEventContext *g_event_context_new_custom (GEventContextFuncs *funcs,
+                                           gsize struct_size);
 GLIB_AVAILABLE_IN_2_38
 GEventContext *g_event_context_ref   (GEventContext *context);
 GLIB_AVAILABLE_IN_2_38

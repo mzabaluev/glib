@@ -34,15 +34,22 @@
 #include "config.h"
 
 #include "geventprivate.h"
+#include "gevent-epoll.h"
 
 #include "gmessages.h"
 #include "gslice.h"
 #include "gthread.h"
 
+/* Uncomment the next line (and the corresponding line in gpoll.c) to
+ * enable debugging printouts if the environment variable
+ * G_MAIN_POLL_DEBUG is set to some value.
+ */
+/* #define G_MAIN_POLL_DEBUG */
+
 struct _GEventContextPrivate
 {
   gsize struct_size;
-  gint  ref_count;
+  gint ref_count;
   GMutex mutex;
 };
 
@@ -54,12 +61,76 @@ static void g_event_context_add_poll_unlocked    (GEventContext *context,
 static void g_event_context_remove_poll_unlocked (GEventContext *context,
                                                   GPollFD       *fd);
 
+#ifdef G_MAIN_POLL_DEBUG
+extern gboolean _g_main_poll_debug;
+#endif
+
+static GEventContext *default_event_context;
+
+/**
+ * g_event_context_default:
+ *
+ * Returns the global default event context. This is the context
+ * used for main loop functions when a main loop is not explicitly
+ * specified, and corresponds to the "main" main loop. See also
+ * g_event_context_get_thread_default().
+ *
+ * Return value: (transfer none): the global default event context.
+ **/
+GEventContext *
+g_event_context_default (void)
+{
+  static gsize initialised;
+
+  if (g_once_init_enter (&initialised))
+    {
+      default_event_context = g_event_context_new ();
+#ifdef G_MAIN_POLL_DEBUG
+      if (_g_main_poll_debug)
+        g_print ("default event context=%p\n", default_event_context);
+#endif
+      g_once_init_leave (&initialised, TRUE);
+    }
+
+  return default_event_context;
+}
+
+/**
+ * g_event_context_new:
+ *
+ * Creates a #GEventContext instance with the built-in implementation.
+ *
+ * Return value: the new #GEventContext
+ **/
+GEventContext *
+g_event_context_new (void)
+{
+#ifdef HAVE_SYS_EPOLL_H
+  return _g_epoll_event_context_new ();
+#else
+  /* TODO: implement the fallback poll() implementation */
+#error no event context implementation available
+#endif
+}
+
 GEventContext *
 g_event_context_new_custom (GEventContextFuncs *funcs,
                             gsize struct_size)
 {
   GEventContext *context;
   GEventContextPrivate *priv;
+
+#ifdef G_MAIN_POLL_DEBUG
+  static gsize debug_initialised;
+
+  if (g_once_init_enter (&debug_initialised))
+    {
+      if (getenv ("G_MAIN_POLL_DEBUG") != NULL)
+        _g_main_poll_debug = TRUE;
+
+      g_once_init_leave (&debug_initialised, TRUE);
+    }
+#endif
 
   context = g_slice_alloc0 (struct_size);
   priv = g_slice_new0 (GEventContextPrivate);
@@ -108,6 +179,9 @@ void
 _g_event_context_add_poll (GEventContext *context,
                            GPollFD       *fd)
 {
+  if (!context)
+    context = g_event_context_default ();
+
   g_return_if_fail (g_atomic_int_get (&context->priv->ref_count) > 0);
   g_return_if_fail (fd != NULL);
 
@@ -120,6 +194,9 @@ void
 _g_event_context_remove_poll (GEventContext *context,
                               GPollFD       *fd)
 {
+  if (!context)
+    context = g_event_context_default ();
+
   g_return_if_fail (g_atomic_int_get (&context->priv->ref_count) > 0);
   g_return_if_fail (fd != NULL);
 
