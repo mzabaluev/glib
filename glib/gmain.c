@@ -34,19 +34,6 @@
 #include "config.h"
 #include "glibconfig.h"
 
-/* Uncomment the next line (and the corresponding line in gpoll.c) to
- * enable debugging printouts if the environment variable
- * G_MAIN_POLL_DEBUG is set to some value.
- */
-/* #define G_MAIN_POLL_DEBUG */
-
-#ifdef _WIN32
-/* Always enable debugging printout on Windows, as it is more often
- * needed there...
- */
-#define G_MAIN_POLL_DEBUG
-#endif
-
 #ifdef G_OS_UNIX
 #include "glib-unix.h"
 #include <pthread.h>
@@ -92,12 +79,13 @@
 #include "gwin32.h"
 #endif
 
+#include "gmain-internal.h"
+
 #ifdef  G_MAIN_POLL_DEBUG
 #include "gtimer.h"
 #endif
 
 #include "gwakeup.h"
-#include "gmain-internal.h"
 #include "glib-init.h"
 #include "glib-private.h"
 
