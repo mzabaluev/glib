@@ -488,13 +488,18 @@ g_propagate_prefixed_error
 <TITLE>The Main Event Loop</TITLE>
 <FILE>main</FILE>
 GMainLoop
+GPollerFuncs
 g_main_loop_new
+g_main_loop_new_with_poller
 g_main_loop_ref
 g_main_loop_unref
 g_main_loop_run
+g_main_loop_start
 g_main_loop_quit
 g_main_loop_is_running
 g_main_loop_get_context
+g_main_loop_prepare_poll
+g_main_loop_process_poll
 g_main_new
 g_main_destroy
 g_main_run
