@@ -74,15 +74,15 @@ static void     g_poll_context_free        (gpointer backend_data);
 static gboolean g_poll_context_acquire     (gpointer backend_data);
 static gboolean g_poll_context_iterate     (gpointer backend_data,
                                             gboolean block);
-static void     g_poll_context_add_fd      (gpointer backend_data,
+static gboolean g_poll_context_add_fd      (gpointer backend_data,
                                             gint     fd,
                                             gushort  events,
                                             gint     priority);
-static void     g_poll_context_modify_fd   (gpointer backend_data,
+static gboolean g_poll_context_modify_fd   (gpointer backend_data,
                                             gint     fd,
                                             gushort  events,
                                             gint     priority);
-static void     g_poll_context_remove_fd   (gpointer backend_data,
+static gboolean g_poll_context_remove_fd   (gpointer backend_data,
                                             gint     fd);
 
 static gint     g_poll_context_query     (GPollLoopBackend *backend,
@@ -293,7 +293,7 @@ g_poll_context_poll (GPollLoopBackend *backend,
     } /* if (n_fds || timeout != 0) */
 }
 
-static void
+static gboolean
 g_poll_context_add_fd (gpointer backend_data,
                        gint     fd,
                        gushort  events,
@@ -338,9 +338,11 @@ g_poll_context_add_fd (gpointer backend_data,
 
   /* Now wake up the main loop if it is waiting in the poll() */
   g_main_context_wakeup (backend->context);
+
+  return TRUE;
 }
 
-static void
+static gboolean
 g_poll_context_remove_fd (gpointer backend_data, gint fd)
 {
   GPollLoopBackend *backend = backend_data;
@@ -381,9 +383,11 @@ g_poll_context_remove_fd (gpointer backend_data, gint fd)
 
   /* Now wake up the main loop if it is waiting in the poll() */
   g_main_context_wakeup (backend->context);
+
+  return TRUE;
 }
 
-static void
+static gboolean
 g_poll_context_modify_fd (gpointer backend_data,
                           gint     fd,
                           gushort  events,
@@ -413,6 +417,8 @@ g_poll_context_modify_fd (gpointer backend_data,
 
   /* Now wake up the main loop if it is waiting in the poll() */
   g_main_context_wakeup (backend->context);
+
+  return TRUE;
 }
 
 static gint

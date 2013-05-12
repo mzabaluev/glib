@@ -77,10 +77,15 @@ typedef struct _GMainContext            GMainContext;
  *     and fail to process any sources.
  * @add_fd: Called to register a file descriptor at the poll facility.
  *     The priority value can be ignored or used for optimization.
+ *     If the implementation fails to register the descriptor,
+ *     it must return %FALSE; otherwise, it returns %TRUE.
  * @modify_fd: Called to modify polling information on a previously
  *     registered file descriptor.
  *     The priority value can be ignored or used for optimization.
  * @remove_fd: Called when a file descriptor is removed from the poll.
+ *     A failure to remove the descriptor should be reported by returning
+ *     %FALSE; this condition can occur in normal operation
+ *     due to the descriptor having been closed.
  *
  * The <structname>GMainContextFuncs</structname> structure contains a table
  * of functions used to implement a #GMainContext backend.
@@ -219,15 +224,15 @@ struct _GMainContextFuncs
   void     (*quit)        (gpointer backend_data);
   gboolean (*is_running)  (gpointer backend_data);
   gboolean (*iterate)     (gpointer backend_data, gboolean block);
-  void     (*add_fd)      (gpointer backend_data,
+  gboolean (*add_fd)      (gpointer backend_data,
                            gint     fd,
                            gushort  events,
                            gint     priority);
-  void     (*modify_fd)   (gpointer backend_data,
+  gboolean (*modify_fd)   (gpointer backend_data,
                            gint     fd,
                            gushort  events,
                            gint     priority);
-  void     (*remove_fd)   (gpointer backend_data,
+  gboolean (*remove_fd)   (gpointer backend_data,
                            gint     fd);
 };
 

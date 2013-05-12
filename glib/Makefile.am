@@ -141,6 +141,7 @@ libglib_2_0_la_SOURCES = 	\
 	glist.c			\
 	gmain-internal.h	\
 	gmain.c	 		\
+	gmain-epoll.c		\
 	gmain-poll.c		\
 	gmappedfile.c		\
 	gmarkup.c		\
