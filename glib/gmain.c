@@ -235,6 +235,9 @@ struct _GMainContext
 
   gint64   time;
   gboolean time_is_fresh;
+
+  GPollFunc fallback_poll_func;
+  gboolean pending_backend_fallback;
 };
 
 struct _GSourceCallback
@@ -363,6 +366,8 @@ static void g_main_context_add_compat_poll      (GMainContext *context,
 static void g_main_context_remove_compat_poll   (GMainContext *context,
                                                  gint top_priority,
                                                  GPollFD *fd);
+static void g_main_context_force_poll_backend   (GMainContext *context);
+
 static void     g_source_iter_init  (GSourceIter   *iter,
 				     GMainContext  *context,
 				     gboolean       may_modify);
@@ -609,6 +614,8 @@ g_main_context_new_with_backend (GMainContextFuncs *funcs,
 
   context->wakeup = g_wakeup_new ();
 
+  context->fallback_poll_func = g_poll;
+
   funcs->set_context (backend_data, context);
 
   g_wakeup_get_pollfd (context->wakeup, &context->wake_up_rec);
@@ -640,8 +647,15 @@ g_main_context_new (void)
   GMainContextFuncs *funcs;
   gpointer backend_data = NULL;
 
-  funcs = &_g_main_poll_context_funcs;
+#ifdef HAVE_SYS_EPOLL_H
+  funcs = &_g_main_epoll_context_funcs;
   backend_data = funcs->create (NULL);
+#endif
+  if (backend_data == NULL)
+    {
+      funcs = &_g_main_poll_context_funcs;
+      backend_data = funcs->create (NULL);
+    }
 
   return g_main_context_new_with_backend (funcs, backend_data);
 }
@@ -3407,6 +3421,14 @@ g_main_context_prepare (GMainContext *context,
       return FALSE;
     }
 
+  /* Handle poll fallback here as well, for applications that iterate the
+   * context using the low-level API */
+  if (G_UNLIKELY (context->pending_backend_fallback))
+    {
+      context->pending_backend_fallback = FALSE;
+      g_main_context_force_poll_backend (context);
+    }
+
 #if 0
   /* If recursing, finish up current dispatch, before starting over */
   if (context->pending_dispatches)
@@ -3427,7 +3449,7 @@ g_main_context_prepare (GMainContext *context,
 	SOURCE_UNREF ((GSource *)context->pending_dispatches->pdata[i], context);
     }
   g_ptr_array_set_size (context->pending_dispatches, 0);
-  
+
   /* Prepare all sources */
 
   context->timeout = -1;
@@ -3791,6 +3813,8 @@ g_main_context_iterate (GMainContext *context,
 			gboolean      dispatch,
 			GThread      *self)
 {
+  GMainContextFuncs *backend_funcs;
+  gpointer backend_data;
   gboolean some_ready;
 
   UNLOCK_CONTEXT (context);
@@ -3810,11 +3834,23 @@ g_main_context_iterate (GMainContext *context,
 
       if (!got_ownership)
 	return FALSE;
+    }
+  else
+    LOCK_CONTEXT (context);
 
-      UNLOCK_CONTEXT (context);
+  /* Handle poll fallback */
+  if (G_UNLIKELY (context->pending_backend_fallback))
+    {
+      context->pending_backend_fallback = FALSE;
+      g_main_context_force_poll_backend (context);
     }
 
-  some_ready = context->funcs->iterate (context->backend_data, block);
+  backend_funcs = context->funcs;
+  backend_data = context->backend_data;
+
+  UNLOCK_CONTEXT (context);
+
+  some_ready = backend_funcs->iterate (backend_data, block);
 
   if (dispatch)
     g_main_context_dispatch (context);
@@ -3965,8 +4001,6 @@ g_main_loop_unref (GMainLoop *loop)
 void 
 g_main_loop_run (GMainLoop *loop)
 {
-  GMainContextFuncs *backend_funcs;
-
   g_return_if_fail (loop != NULL);
   g_return_if_fail (g_atomic_int_get (&loop->ref_count) > 0);
 
@@ -4011,13 +4045,15 @@ g_main_loop_run (GMainLoop *loop)
 
   g_atomic_int_inc (&loop->ref_count);
   loop->is_running = TRUE;
-  backend_funcs = loop->context->funcs;
 
   while (loop->is_running)
     {
+      GMainContextFuncs *backend_funcs = loop->context->funcs;
+      gpointer backend_data = loop->context->backend_data;
+
       UNLOCK_CONTEXT (loop->context);
 
-      if (backend_funcs->iterate (loop->context->backend_data, TRUE))
+      if (backend_funcs->iterate (backend_data, TRUE))
         g_main_context_dispatch (loop->context);
 
       LOCK_CONTEXT (loop->context);
@@ -4484,6 +4520,34 @@ g_source_get_time (GSource *source)
   return result;
 }
 
+/* HOLDS: context's lock */
+static void
+reregister_poll_walk (gpointer key, gpointer value, gpointer user_data)
+{
+  GMainContext *context = user_data;
+  gint fd = GPOINTER_TO_INT (key);
+  GPollBin *bin = value;
+  context->funcs->add_fd (context->backend_data,
+      fd, bin->events, bin->top_priority);
+}
+
+/* HOLDS: context's lock */
+static void
+g_main_context_force_poll_backend (GMainContext *context)
+{
+  context->funcs->free (context->backend_data);
+
+  context->funcs = &_g_main_poll_context_funcs;
+  context->backend_data = context->funcs->create (NULL);
+  context->funcs->set_context (context->backend_data, context);
+
+  _g_main_compat_set_poll_func (context->backend_data,
+                                context->fallback_poll_func);
+
+  g_hash_table_foreach (context->poll_fds,
+                        reregister_poll_walk, context);
+}
+
 /**
  * g_main_context_set_poll_func:
  * @context: a #GMainContext
@@ -4494,8 +4558,14 @@ g_source_get_time (GSource *source)
  * (or GLib's replacement function, which is used where 
  * poll() isn't available).
  *
- * This function could possibly be used to integrate the GLib event
- * loop with an external event loop.
+ * Using this function forces @context to use an inefficient poll
+ * implementation, therefore it's best avoided in new code. If the
+ * context was created with g_main_context_create_custom(), usage of
+ * the custom backend will be discontinued at the beginning of
+ * the next iteration, and the backend function %free will be called.
+ * Usage of custom backends defined via #GMainContextFuncs offers a more
+ * flexible and performance-friendly way to integrate the GLib event loop
+ * with an external event loop.
  **/
 void
 g_main_context_set_poll_func (GMainContext *context,
@@ -4508,9 +4578,12 @@ g_main_context_set_poll_func (GMainContext *context,
 
   LOCK_CONTEXT (context);
 
-  /* TODO: switch to the poll backend */
+  context->fallback_poll_func = func;
 
-  _g_main_compat_set_poll_func (context->backend_data, func);
+  if (context->funcs == &_g_main_poll_context_funcs)
+    _g_main_compat_set_poll_func (context->backend_data, func);
+  else
+    context->pending_backend_fallback = TRUE;
 
   UNLOCK_CONTEXT (context);
 }
@@ -4534,11 +4607,7 @@ g_main_context_get_poll_func (GMainContext *context)
   g_return_val_if_fail (g_atomic_int_get (&context->ref_count) > 0, NULL);
 
   LOCK_CONTEXT (context);
-
-  /* TODO: switch to the poll backend */
-
-  result = _g_main_compat_get_poll_func (context->backend_data);
-
+  result = context->fallback_poll_func;
   UNLOCK_CONTEXT (context);
 
   return result;

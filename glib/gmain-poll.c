@@ -456,16 +456,3 @@ _g_main_compat_set_poll_func (gpointer backend_data, GPollFunc func)
   backend->poll_func = (func != NULL)? func : g_poll;
   UNLOCK_BACKEND (backend);
 }
-
-GPollFunc
-_g_main_compat_get_poll_func (gpointer backend_data)
-{
-  GPollLoopBackend *backend = backend_data;
-  GPollFunc func;
-
-  LOCK_BACKEND (backend);
-  func = backend->poll_func;
-  UNLOCK_BACKEND (backend);
-
-  return func;
-}

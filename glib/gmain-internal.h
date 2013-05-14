@@ -49,10 +49,13 @@ extern gboolean _g_main_poll_debug;
 
 extern GMainContextFuncs _g_main_poll_context_funcs;
 
+#ifdef HAVE_SYS_EPOLL_H
+extern GMainContextFuncs _g_main_epoll_context_funcs;
+#endif
+
 /* Functions supporting poll-centric API on GMainContext */
 void      _g_main_compat_set_poll_func (gpointer backend_data,
                                         GPollFunc func);
-GPollFunc _g_main_compat_get_poll_func (gpointer backend_data);
 
 G_END_DECLS
 
