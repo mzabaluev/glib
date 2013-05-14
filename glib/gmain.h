@@ -63,18 +63,8 @@ typedef struct _GMainContext            GMainContext;
  *     %FALSE.
  * @release: Called to release ownership of the previously acquired
  *     main loop context. The function pointer can be null.
- * @run: Called to run the main loop until the @quit function is called.
- * @quit: Called to quit the main loop.
- * @is_running: Called to check if the main loop is currently running.
- * @iterate: Called to perform a single iteration step.
- *     Main loop implementations not supporting single step iteration
- *     can set the function pointer to null. If this function is implemented,
- *     @run, @quit, and @is_running, in turn, may be null.
- *     Main loops not supporting single step iteration have reduced
- *     functionality: calling g_main_context_iteration(),
- *     g_main_context_pending(), or attempts to run the main context
- *     recursively with g_main_loop_run() will produce critical warnings
- *     and fail to process any sources.
+ * @iterate: Called to perform a single iteration step. Returns %TRUE if
+ *     events were dispatched.
  * @add_fd: Called to register a file descriptor at the poll facility.
  *     The priority value can be ignored or used for optimization.
  *     If the implementation fails to register the descriptor,
@@ -220,9 +210,6 @@ struct _GMainContextFuncs
   void     (*free)        (gpointer backend_data);
   gboolean (*acquire)     (gpointer backend_data);
   void     (*release)     (gpointer backend_data);
-  void     (*run)         (gpointer backend_data);
-  void     (*quit)        (gpointer backend_data);
-  gboolean (*is_running)  (gpointer backend_data);
   gboolean (*iterate)     (gpointer backend_data, gboolean block);
   gboolean (*add_fd)      (gpointer backend_data,
                            gint     fd,

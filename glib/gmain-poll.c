@@ -102,9 +102,6 @@ GMainContextFuncs _g_main_poll_context_funcs =
   g_poll_context_free,
   g_poll_context_acquire,
   NULL, /* release */
-  NULL, /* run */
-  NULL, /* quit */
-  NULL, /* is_running */
   g_poll_context_iterate,
   g_poll_context_add_fd,
   g_poll_context_modify_fd,

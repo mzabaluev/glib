@@ -82,9 +82,6 @@ GMainContextFuncs _g_main_epoll_context_funcs =
   g_epoll_context_free,
   g_epoll_context_acquire,
   NULL, /* release */
-  NULL, /* run */
-  NULL, /* quit */
-  NULL, /* is_running */
   g_epoll_context_iterate,
   g_epoll_context_add_fd,
   g_epoll_context_modify_fd,

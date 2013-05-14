@@ -235,8 +235,6 @@ struct _GMainContext
 
   gint64   time;
   gboolean time_is_fresh;
-
-  gboolean warned_compat_iterate;
 };
 
 struct _GSourceCallback
@@ -3793,20 +3791,7 @@ g_main_context_iterate (GMainContext *context,
 			gboolean      dispatch,
 			GThread      *self)
 {
-  GMainContextFuncs *backend_funcs = context->funcs;
   gboolean some_ready;
-
-  if (backend_funcs->iterate == NULL)
-    {
-      if (block)
-        g_error ("iteration not supported in the main loop backend; preventing a busy loop");
-      else if (!context->warned_compat_iterate)
-        {
-          g_critical ("iteration not supported in the main loop backend");
-          context->warned_compat_iterate = TRUE;
-        }
-      return FALSE;
-    }
 
   UNLOCK_CONTEXT (context);
 
@@ -3829,7 +3814,7 @@ g_main_context_iterate (GMainContext *context,
       UNLOCK_CONTEXT (context);
     }
 
-  some_ready = backend_funcs->iterate (context->backend_data, block);
+  some_ready = context->funcs->iterate (context->backend_data, block);
 
   if (dispatch)
     g_main_context_dispatch (context);
@@ -4028,29 +4013,17 @@ g_main_loop_run (GMainLoop *loop)
   loop->is_running = TRUE;
   backend_funcs = loop->context->funcs;
 
-  if (backend_funcs->iterate != NULL)
-    {
-      while (loop->is_running)
-        {
-          UNLOCK_CONTEXT (loop->context);
-
-          if (backend_funcs->iterate (loop->context->backend_data, TRUE))
-            g_main_context_dispatch (loop->context);
-
-          LOCK_CONTEXT (loop->context);
-        }
-
-      UNLOCK_CONTEXT (loop->context);
-    }
-  else
+  while (loop->is_running)
     {
       UNLOCK_CONTEXT (loop->context);
 
-      if (!backend_funcs->is_running (loop->context->backend_data))
-        backend_funcs->run (loop->context->backend_data);
-      else
-        g_critical ("recursion is not supported by the main loop backend");
+      if (backend_funcs->iterate (loop->context->backend_data, TRUE))
+        g_main_context_dispatch (loop->context);
+
+      LOCK_CONTEXT (loop->context);
     }
+
+  UNLOCK_CONTEXT (loop->context);
 
   g_main_context_release (loop->context);
   
@@ -4070,19 +4043,13 @@ g_main_loop_run (GMainLoop *loop)
 void 
 g_main_loop_quit (GMainLoop *loop)
 {
-  GMainContextFuncs *backend_funcs;
-
   g_return_if_fail (loop != NULL);
   g_return_if_fail (g_atomic_int_get (&loop->ref_count) > 0);
 
   LOCK_CONTEXT (loop->context);
   loop->is_running = FALSE;
 
-  backend_funcs = loop->context->funcs;
-  if (backend_funcs->iterate == NULL)
-    backend_funcs->quit (loop->context->backend_data);
-  else
-    g_wakeup_signal (loop->context->wakeup);
+  g_wakeup_signal (loop->context->wakeup);
 
   g_cond_broadcast (&loop->context->cond);
 
