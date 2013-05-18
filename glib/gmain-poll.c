@@ -179,8 +179,6 @@ g_poll_context_iterate (gpointer backend_data,
 
   g_main_context_prepare (backend->context, &max_priority);
 
-  g_main_context_reset_compat_polls (backend->context, max_priority);
-
   while ((nfds = g_poll_context_query (backend, max_priority, fds,
                                        allocated_nfds)) > allocated_nfds)
     {

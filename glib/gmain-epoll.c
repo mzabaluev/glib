@@ -253,8 +253,6 @@ g_epoll_context_iterate (gpointer backend_data,
 
   g_main_context_prepare (backend->context, &max_priority);
 
-  g_main_context_reset_compat_polls (backend->context, max_priority);
-
   /* Could do some optimizations here, like noticing that none of our records
    * have priority equal or higher than max_priority and skipping the poll,
    * or ignoring fds that are falling behind max_priority.

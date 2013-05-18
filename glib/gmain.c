@@ -366,6 +366,8 @@ static void g_main_context_add_compat_poll      (GMainContext *context,
 static void g_main_context_remove_compat_poll   (GMainContext *context,
                                                  gint top_priority,
                                                  GPollFD *fd);
+static void g_main_context_reset_compat_polls   (GMainContext *context,
+                                                 gint max_priority);
 static void g_main_context_force_poll_backend   (GMainContext *context);
 
 static void     g_source_iter_init  (GSourceIter   *iter,
@@ -3542,6 +3544,8 @@ g_main_context_prepare (GMainContext *context,
     }
   g_source_iter_clear (&iter);
 
+  g_main_context_reset_compat_polls (context, current_priority);
+
   UNLOCK_CONTEXT (context);
   
   if (priority)
@@ -3588,6 +3592,8 @@ g_main_context_query (GMainContext *context,
   gint n_poll = 0;
 
   LOCK_CONTEXT (context);
+
+  g_main_context_reset_compat_polls (context, max_priority);
 
   g_hash_table_iter_init (&iter, context->poll_fds);
   while (g_hash_table_iter_next (&iter, &key, &value))
@@ -4416,27 +4422,20 @@ compat_poll_free (GCompatPollRec *data)
   g_slice_free (GCompatPollRec, data);
 }
 
-/**
- * g_main_context_reset_compat_polls:
- * @context: a #GMainContext
- * @max_priority: the maximum numerical priority of entries to update
- *
- * Used by main loop implementations to cause %revents fields of #GPollFD
- * structures added with g_source_add_poll() to be set to zero.
+/*
+ * Causes %revents fields of #GPollFD structures added with
+ * g_source_add_poll() to be set to zero.
  * Additionally, if any %events fields have been changed by the application
  * since the last iteration, the corresponding file descriptor information
  * is updated in the poll backend.
- * This function is normally called between g_main_context_prepare()
- * and entering the poll.
  */
-void
+/* HOLDS: context's lock */
+static void
 g_main_context_reset_compat_polls (GMainContext *context, gint max_priority)
 {
   GSequenceIter *iter;
   const GCompatPollRec *rec;
   GPollFD *pollfd;
-
-  LOCK_CONTEXT (context);
 
   iter = g_sequence_get_begin_iter (context->compat_polls);
   while (!g_sequence_iter_is_end (iter))
@@ -4458,8 +4457,6 @@ g_main_context_reset_compat_polls (GMainContext *context, gint max_priority)
 
       iter = g_sequence_iter_next (iter);
     }
-
-  UNLOCK_CONTEXT (context);
 }
 
 /**

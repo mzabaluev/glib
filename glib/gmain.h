@@ -413,9 +413,6 @@ gint     g_main_context_query    (GMainContext *context,
                                   GPollFD      *fds,
                                   gint          n_fds);
 GLIB_AVAILABLE_IN_2_38
-void     g_main_context_reset_compat_polls (GMainContext *context,
-                                            gint max_priority);
-GLIB_AVAILABLE_IN_2_38
 gint     g_main_context_get_poll_timeout   (GMainContext *context);
 GLIB_AVAILABLE_IN_ALL
 gint     g_main_context_check    (GMainContext *context,
