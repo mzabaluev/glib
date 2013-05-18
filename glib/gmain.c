@@ -3125,6 +3125,34 @@ unblock_source (GSource *source)
     }
 }
 
+static void
+reset_source_fds (GSource *source)
+{
+  GSList *tmp_list;
+  GPollFD *fd;
+
+  for (tmp_list = source->poll_fds; tmp_list; tmp_list = tmp_list->next)
+    {
+      fd = tmp_list->data;
+      fd->revents = 0;
+    }
+  for (tmp_list = source->priv->fds; tmp_list; tmp_list = tmp_list->next)
+    {
+      fd = tmp_list->data;
+      fd->revents = 0;
+    }
+
+  if (source->priv && source->priv->child_sources)
+    {
+      tmp_list = source->priv->child_sources;
+      while (tmp_list)
+        {
+          reset_source_fds (tmp_list->data);
+          tmp_list = tmp_list->next;
+        }
+    }
+}
+
 /* HOLDS: context's lock */
 static void
 g_main_dispatch (GMainContext *context)
@@ -3162,9 +3190,6 @@ g_main_dispatch (GMainContext *context)
 	  if (cb_funcs)
 	    cb_funcs->ref (cb_data);
 	  
-	  if ((source->flags & G_SOURCE_CAN_RECURSE) == 0)
-	    block_source (source);
-	  
 	  was_in_call = source->flags & G_HOOK_FLAG_IN_CALL;
 	  source->flags |= G_HOOK_FLAG_IN_CALL;
 
@@ -3201,9 +3226,18 @@ g_main_dispatch (GMainContext *context)
 	  if (!was_in_call)
 	    source->flags &= ~G_HOOK_FLAG_IN_CALL;
 
-	  if (SOURCE_BLOCKED (source) && !SOURCE_DESTROYED (source))
-	    unblock_source (source);
-	  
+	  if (!need_destroy && !SOURCE_DESTROYED (source))
+	    {
+	      /* If the source has not been blocked on recursive iteration,
+	       * we still want to nullify revents fields for its fds
+	       * as prepare may want to check them next call
+	       */
+	      if (SOURCE_BLOCKED (source))
+	        unblock_source (source);
+	      else
+	        reset_source_fds (source);
+	    }
+
 	  /* Note: this depends on the fact that we can't switch
 	   * sources from one main context to another
 	   */
@@ -3405,6 +3439,7 @@ g_main_context_prepare (GMainContext *context,
   gint i;
   gint n_ready = 0;
   gint current_priority = G_MAXINT;
+  GSource *dispatching_source;
   GSource *source;
   GSourceIter iter;
 
@@ -3451,6 +3486,14 @@ g_main_context_prepare (GMainContext *context,
 	SOURCE_UNREF ((GSource *)context->pending_dispatches->pdata[i], context);
     }
   g_ptr_array_set_size (context->pending_dispatches, 0);
+
+  /* If the currently dispatching source cannot recurse, block it */
+
+  dispatching_source = g_main_current_source ();
+  if (dispatching_source != NULL &&
+      dispatching_source->context == context &&
+      !(dispatching_source->flags & (G_SOURCE_CAN_RECURSE|G_SOURCE_BLOCKED)))
+    block_source (dispatching_source);
 
   /* Prepare all sources */
 
@@ -3858,7 +3901,7 @@ g_main_context_iterate (GMainContext *context,
 
   some_ready = backend_funcs->iterate (backend_data, block);
 
-  if (dispatch)
+  if (some_ready && dispatch)
     g_main_context_dispatch (context);
 
   g_main_context_release (context);
