@@ -321,7 +321,7 @@ g_epoll_context_add_fd (gpointer backend_data,
                         G_GNUC_UNUSED gint priority)
 {
   GEpollLoopBackend *backend = backend_data;
-  struct epoll_event ev;
+  struct epoll_event ev = { 0, };
   int retval;
 
   ev.events = g_io_condition_to_epoll_events (events);
@@ -352,7 +352,7 @@ g_epoll_context_modify_fd (gpointer backend_data,
                            G_GNUC_UNUSED gint priority)
 {
   GEpollLoopBackend *backend = backend_data;
-  struct epoll_event ev;
+  struct epoll_event ev = { 0, };
   int retval;
 
   ev.events = g_io_condition_to_epoll_events (events);
@@ -371,7 +371,7 @@ static gboolean
 g_epoll_context_remove_fd (gpointer backend_data, gint fd)
 {
   GEpollLoopBackend *backend = backend_data;
-  struct epoll_event dummy_ev;
+  struct epoll_event dummy_ev = { 0, };
   int retval;
 
   g_atomic_int_dec_and_test (&backend->n_poll_records);
