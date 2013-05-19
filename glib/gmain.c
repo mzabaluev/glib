@@ -3247,7 +3247,7 @@ g_main_dispatch (GMainContext *context)
 	       */
 	      if (SOURCE_BLOCKED (source))
 	        unblock_source (source);
-	      else
+	      else if (!was_in_call)
 	        reset_source_fds (source);
 	    }
 
@@ -4482,11 +4482,10 @@ compat_poll_free (GCompatPollRec *data)
 }
 
 /*
- * Causes %revents fields of #GPollFD structures added with
- * g_source_add_poll() to be set to zero.
- * Additionally, if any %events fields have been changed by the application
- * since the last iteration, the corresponding file descriptor information
- * is updated in the poll backend.
+ * Iterates through all #GPollFD structures added with
+ * g_source_add_poll() and g_main_context_add_poll(). If any %events fields
+ * have been changed by the application since the last iteration, the
+ * corresponding file descriptor information is updated in the poll backend.
  */
 /* HOLDS: context's lock */
 static void
@@ -4511,8 +4510,6 @@ g_main_context_reset_compat_polls (GMainContext *context, gint max_priority)
           /* The application has changed pollfd->events behind our back. */
           g_main_context_modify_poll_unlocked (context, rec->priority, pollfd);
         }
-
-      pollfd->revents = 0;
 
       iter = g_sequence_iter_next (iter);
     }
