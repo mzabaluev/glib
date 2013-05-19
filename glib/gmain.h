@@ -69,6 +69,8 @@ typedef struct _GMainContext            GMainContext;
  *     The priority value can be ignored or used for optimization.
  *     If the implementation fails to register the descriptor,
  *     it must return %FALSE; otherwise, it returns %TRUE.
+ *     Not all descriptors added by @add_fd will be removed by @remove_fd,
+ *     so the implementation of @free should clean up any remaining state.
  * @modify_fd: Called to modify polling information on a previously
  *     registered file descriptor.
  *     The priority value can be ignored or used for optimization.

@@ -1253,7 +1253,10 @@ g_source_destroy_internal (GSource      *source,
 	  LOCK_CONTEXT (context);
 	}
 
-      if (!SOURCE_BLOCKED (source))
+      /* A null in source->context means the context is going away,
+       * so we can skip on removing the polls.
+       */
+      if (source->context != NULL && !SOURCE_BLOCKED (source))
 	{
 	  tmp_list = source->poll_fds;
 	  while (tmp_list)
@@ -1267,7 +1270,11 @@ g_source_destroy_internal (GSource      *source,
 	}
 
       while (source->priv->child_sources)
-        g_child_source_remove_internal (source->priv->child_sources->data, context);
+        {
+          GSource *child_source = source->priv->child_sources->data;
+          child_source->context = source->context;
+          g_child_source_remove_internal (child_source, context);
+        }
 
       if (source->priv->parent_source)
         g_child_source_remove_internal (source, context);
