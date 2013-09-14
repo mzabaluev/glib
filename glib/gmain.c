@@ -203,7 +203,7 @@ gboolean _g_main_poll_debug = FALSE;
 
 struct _GMainContext
 {
-  GMainContextFuncs *funcs;
+  const GMainContextFuncs *funcs;
   gpointer *backend_data;
 
   /* The following lock is used for both the list of sources
@@ -572,7 +572,7 @@ g_main_context_new_with_next_id (guint next_id)
 }
 
 static GMainContext *
-g_main_context_new_with_backend (GMainContextFuncs *funcs,
+g_main_context_new_with_backend (const GMainContextFuncs *funcs,
                                  gpointer backend_data)
 {
 #ifdef G_MAIN_POLL_DEBUG
@@ -648,7 +648,7 @@ g_main_context_new_with_backend (GMainContextFuncs *funcs,
 GMainContext *
 g_main_context_new (void)
 {
-  GMainContextFuncs *funcs;
+  const GMainContextFuncs *funcs;
   gpointer backend_data = NULL;
 
 #ifdef HAVE_SYS_EPOLL_H
@@ -665,7 +665,7 @@ g_main_context_new (void)
 }
 
 GMainContext *
-g_main_context_new_custom (GMainContextFuncs *funcs, gpointer user_data)
+g_main_context_new_custom (const GMainContextFuncs *funcs, gpointer user_data)
 {
   gpointer backend_data;
 
@@ -3338,7 +3338,7 @@ g_main_context_release (GMainContext *context)
   context->owner_count--;
   if (context->owner_count == 0)
     {
-      GMainContextFuncs *backend_funcs;
+      const GMainContextFuncs *backend_funcs;
 
       backend_funcs = context->funcs;
       if (backend_funcs->release != NULL)
@@ -3875,7 +3875,7 @@ g_main_context_iterate (GMainContext *context,
 			gboolean      dispatch,
 			GThread      *self)
 {
-  GMainContextFuncs *backend_funcs;
+  const GMainContextFuncs *backend_funcs;
   gpointer backend_data;
   gboolean some_ready;
 
@@ -4110,7 +4110,7 @@ g_main_loop_run (GMainLoop *loop)
 
   while (loop->is_running)
     {
-      GMainContextFuncs *backend_funcs = loop->context->funcs;
+      const GMainContextFuncs *backend_funcs = loop->context->funcs;
       gpointer backend_data = loop->context->backend_data;
 
       UNLOCK_CONTEXT (loop->context);

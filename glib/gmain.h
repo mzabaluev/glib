@@ -390,7 +390,7 @@ GSource      *g_main_context_find_source_by_funcs_user_data (GMainContext *conte
 /* Low level functions for implementing custom main loops.
  */
 GLIB_AVAILABLE_IN_2_38
-GMainContext *g_main_context_new_custom (GMainContextFuncs *funcs,
+GMainContext *g_main_context_new_custom (const GMainContextFuncs *funcs,
                                          gpointer user_data);
 GLIB_AVAILABLE_IN_ALL
 void     g_main_context_wakeup  (GMainContext *context);
