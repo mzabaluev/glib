@@ -73,7 +73,8 @@ static void     g_poll_context_set_context (gpointer backend_data,
 static void     g_poll_context_free        (gpointer backend_data);
 static gboolean g_poll_context_acquire     (gpointer backend_data);
 static gboolean g_poll_context_iterate     (gpointer backend_data,
-                                            gboolean block);
+                                            gboolean block,
+                                            gboolean dispatch);
 static gboolean g_poll_context_add_fd      (gpointer backend_data,
                                             gint     fd,
                                             gushort  events,
@@ -155,7 +156,8 @@ g_poll_context_acquire (gpointer backend_data)
 
 static gboolean
 g_poll_context_iterate (gpointer backend_data,
-                        gboolean block)
+                        gboolean block,
+                        gboolean dispatch)
 {
   GPollLoopBackend *backend = backend_data;
   gint max_priority;
@@ -163,6 +165,7 @@ g_poll_context_iterate (gpointer backend_data,
   gint nfds, allocated_nfds;
   GPollFD *fds = NULL;
   gboolean poll_changed;
+  gboolean sources_ready;
 
   LOCK_BACKEND (backend);
 
@@ -200,7 +203,13 @@ g_poll_context_iterate (gpointer backend_data,
   if (poll_changed)
     return FALSE;
 
-  return g_main_context_check (backend->context, max_priority, fds, nfds);
+  sources_ready = g_main_context_check (backend->context, max_priority,
+      fds, nfds);
+
+  if (dispatch && sources_ready)
+    g_main_context_dispatch (backend->context);
+
+  return sources_ready;
 }
 
 static void

@@ -3912,10 +3912,7 @@ g_main_context_iterate (GMainContext *context,
 
   UNLOCK_CONTEXT (context);
 
-  some_ready = backend_funcs->iterate (backend_data, block);
-
-  if (some_ready && dispatch)
-    g_main_context_dispatch (context);
+  some_ready = backend_funcs->iterate (backend_data, block, dispatch);
 
   g_main_context_release (context);
 
@@ -4115,8 +4112,7 @@ g_main_loop_run (GMainLoop *loop)
 
       UNLOCK_CONTEXT (loop->context);
 
-      if (backend_funcs->iterate (backend_data, TRUE))
-        g_main_context_dispatch (loop->context);
+      backend_funcs->iterate (backend_data, TRUE, TRUE);
 
       LOCK_CONTEXT (loop->context);
     }

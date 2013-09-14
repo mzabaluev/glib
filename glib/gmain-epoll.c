@@ -61,7 +61,8 @@ static void     g_epoll_context_set_context (gpointer backend_data,
 static void     g_epoll_context_free        (gpointer backend_data);
 static gboolean g_epoll_context_acquire     (gpointer backend_data);
 static gboolean g_epoll_context_iterate     (gpointer backend_data,
-                                             gboolean block);
+                                             gboolean block,
+                                             gboolean dispatch);
 static gboolean g_epoll_context_add_fd      (gpointer backend_data,
                                              gint     fd,
                                              gushort  events,
@@ -243,13 +244,15 @@ g_epoll_context_acquire (gpointer backend_data)
 
 static gboolean
 g_epoll_context_iterate (gpointer backend_data,
-                         gboolean block)
+                         gboolean block,
+                         gboolean dispatch)
 {
   GEpollLoopBackend *backend = backend_data;
   gint max_priority;
   gint timeout;
   gint n_ready;
   gint i;
+  gboolean sources_ready;
 
   g_main_context_prepare (backend->context, &max_priority);
 
@@ -288,8 +291,13 @@ g_epoll_context_iterate (gpointer backend_data,
       pollfd->revents = g_io_condition_from_epoll_events (ev->events);
     }
 
-  return g_main_context_check (backend->context, max_priority,
-                               backend->fds_ready, n_ready);
+  sources_ready = g_main_context_check (backend->context, max_priority,
+      backend->fds_ready, n_ready);
+
+  if (dispatch && sources_ready)
+    g_main_context_dispatch (backend->context);
+
+  return sources_ready;
 }
 
 static int

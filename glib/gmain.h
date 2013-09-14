@@ -64,7 +64,8 @@ typedef struct _GMainContext            GMainContext;
  * @release: Called to release ownership of the previously acquired
  *     main loop context. The function pointer can be null.
  * @iterate: Called to perform a single iteration step. Returns %TRUE if
- *     events were dispatched.
+ *     events were reported. If dispatch_sources is true, the backend
+ *     must call g_main_context_dispatch() to dispatch the events.
  * @add_fd: Called to register a file descriptor at the poll facility.
  *     The priority value can be ignored or used for optimization.
  *     If the implementation fails to register the descriptor,
@@ -212,7 +213,9 @@ struct _GMainContextFuncs
   void     (*free)        (gpointer backend_data);
   gboolean (*acquire)     (gpointer backend_data);
   void     (*release)     (gpointer backend_data);
-  gboolean (*iterate)     (gpointer backend_data, gboolean block);
+  gboolean (*iterate)     (gpointer backend_data,
+                           gboolean block,
+                           gboolean dispatch_sources);
   gboolean (*add_fd)      (gpointer backend_data,
                            gint     fd,
                            gushort  events,
