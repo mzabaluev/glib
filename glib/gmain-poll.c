@@ -434,6 +434,8 @@ g_poll_context_query (GPollLoopBackend *backend,
   gint n_poll;
   GPollRec *pollrec;
 
+  LOCK_BACKEND (backend);
+
   pollrec = backend->poll_records;
   n_poll = 0;
   while (pollrec && max_priority >= pollrec->priority)
@@ -450,6 +452,8 @@ g_poll_context_query (GPollLoopBackend *backend,
     }
 
   backend->poll_changed = FALSE;
+
+  UNLOCK_BACKEND (backend);
 
   return n_poll;
 }
