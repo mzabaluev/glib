@@ -1395,6 +1395,36 @@ test_source_unix_fd_api (void)
   close (fds_b[1]);
 }
 
+static void
+test_unix_file_poll (void)
+{
+  gint fd;
+  GSource *source;
+  gboolean in;
+
+  fd = open ("/dev/null", O_RDONLY);
+  g_assert (fd >= 0);
+
+  source = g_unix_fd_source_new (fd, G_IO_IN);
+  g_source_set_callback (source, (GSourceFunc) flag_bool, &in, NULL);
+  g_source_attach (source, NULL);
+
+  in = FALSE;
+
+  /* Should not block */
+  g_main_context_iteration (NULL, TRUE);
+
+  g_assert (in);
+
+  g_source_destroy (source);
+
+  assert_main_context_state (0);
+
+  g_source_unref (source);
+
+  close (fd);
+}
+
 #endif
 
 int
@@ -1420,6 +1450,7 @@ main (int argc, char *argv[])
   g_test_add_func ("/mainloop/unix-fd", test_unix_fd);
   g_test_add_func ("/mainloop/unix-fd-source", test_unix_fd_source);
   g_test_add_func ("/mainloop/source-unix-fd-api", test_source_unix_fd_api);
+  g_test_add_func ("/mainloop/unix-file-poll", test_unix_file_poll);
 #endif
 
   return g_test_run ();
