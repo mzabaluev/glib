@@ -1148,6 +1148,7 @@ assert_main_context_state (gint n_to_poll,
   GMainContext *context;
   gboolean consumed[10] = { };
   GPollFD poll_fds[10];
+  gboolean acquired;
   gboolean immediate;
   gint max_priority;
   gint timeout;
@@ -1156,6 +1157,9 @@ assert_main_context_state (gint n_to_poll,
   va_list ap;
 
   context = g_main_context_default ();
+
+  acquired = g_main_context_acquire (context);
+  g_assert (acquired);
 
   immediate = g_main_context_prepare (context, &max_priority);
   g_assert (!immediate);
@@ -1189,6 +1193,8 @@ assert_main_context_state (gint n_to_poll,
 
   if (g_main_context_check (context, max_priority, poll_fds, n))
     g_main_context_dispatch (context);
+
+  g_main_context_release (context);
 }
 
 static gboolean
