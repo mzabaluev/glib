@@ -197,6 +197,19 @@ _g_socket_read_with_control_messages (GSocket                 *socket,
   if (!g_socket_condition_check (socket, G_IO_IN))
     {
       GSource *source;
+      GError *error = NULL;
+
+      /* Avoid creating a source if the operation has been cancelled,
+       * as this means that the socket is about to be closed and we'd
+       * end up with a bogus descriptor in the poll. */
+      if (g_cancellable_set_error_if_cancelled (cancellable, &error))
+        {
+          g_simple_async_result_take_error (data->simple, error);
+          g_simple_async_result_complete_in_idle (data->simple);
+          read_with_control_data_free (data);
+          return;
+        }
+
       data->from_mainloop = TRUE;
       source = g_socket_create_source (data->socket,
                                        G_IO_IN | G_IO_HUP | G_IO_ERR,
