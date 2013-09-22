@@ -31,6 +31,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <string.h>
 
 #include "ghash.h"
 #include "gmessages.h"
@@ -55,13 +56,8 @@ struct _GEpollLoopBackend
   GPollFD *fds_ready;
   gsize    fds_ready_size;
 
-  GHashTable *compat_fds;
-
-  GMutex mutex;
+  guint n_compat_fds;
 };
-
-#define LOCK_BACKEND(backend) g_mutex_lock (&backend->mutex)
-#define UNLOCK_BACKEND(backend) g_mutex_unlock (&backend->mutex)
 
 static gpointer g_epoll_context_create      (gpointer user_data);
 static void     g_epoll_context_set_context (gpointer backend_data,
@@ -210,12 +206,6 @@ g_epoll_context_create (G_GNUC_UNUSED gpointer user_data)
 
   backend->epoll_fd = epoll_fd;
 
-  g_atomic_int_set (&backend->n_poll_records, 0);
-
-  backend->compat_fds = g_hash_table_new (g_direct_hash, g_direct_equal);
-
-  g_mutex_init (&backend->mutex);
-
   return backend;
 }
 
@@ -241,11 +231,8 @@ g_epoll_context_free (gpointer backend_data)
              backend->epoll_fd, g_thread_self ());
 #endif
 
-  g_mutex_clear (&backend->mutex);
-
   g_free (backend->fds_ready);
   g_free (backend->epoll_output);
-  g_hash_table_destroy (backend->compat_fds);
 
   g_slice_free (GEpollLoopBackend, backend);
 }
@@ -267,38 +254,6 @@ g_epoll_context_ensure_ready_size (GEpollLoopBackend *backend, gsize needed)
     }
 }
 
-static guint
-g_epoll_context_query_compat_fds (GEpollLoopBackend *backend)
-{
-  guint n_compat_fds;
-  GHashTableIter compat_iter;
-  gpointer key, value;
-  GPollFD *pollfd;
-
-  LOCK_BACKEND (backend);
-
-  n_compat_fds = g_hash_table_size (backend->compat_fds);
-
-  if (n_compat_fds != 0)
-    {
-      g_epoll_context_ensure_ready_size (backend, n_compat_fds);
-
-      pollfd = backend->fds_ready;
-      g_hash_table_iter_init (&compat_iter, backend->compat_fds);
-      while (g_hash_table_iter_next (&compat_iter, &key, &value))
-        {
-          pollfd->fd = GPOINTER_TO_INT (key);
-          pollfd->events = GPOINTER_TO_UINT (value);
-          pollfd->revents = 0;
-          ++pollfd;
-        }
-    }
-
-  UNLOCK_BACKEND (backend);
-
-  return n_compat_fds;
-}
-
 static gboolean
 g_epoll_context_iterate (gpointer backend_data,
                          gboolean block,
@@ -308,9 +263,9 @@ g_epoll_context_iterate (gpointer backend_data,
   gint max_priority;
   gint timeout;
   gint n_ready;
+  gint n_fds_total;
   gint i;
   GPollFD *pollfd;
-  guint n_compat_fds;
   gboolean sources_ready;
 
   g_main_context_prepare (backend->context, &max_priority);
@@ -318,11 +273,9 @@ g_epoll_context_iterate (gpointer backend_data,
   /* If the application has added descriptors that are not meaningfully
    * pollable, we should still serve them as per poll(2) semantics. */
 
-  n_compat_fds = g_epoll_context_query_compat_fds (backend);
-
-  if (n_compat_fds != 0)
+  if (backend->n_compat_fds != 0)
     {
-      if (g_poll (backend->fds_ready, n_compat_fds, 0) > 0)
+      if (g_poll (backend->fds_ready, backend->n_compat_fds, 0) > 0)
         block = FALSE;
     }
 
@@ -347,12 +300,13 @@ g_epoll_context_iterate (gpointer backend_data,
       n_ready = 0;
     }
 
-  g_epoll_context_ensure_ready_size (backend, n_compat_fds + (guint) n_ready);
+  n_fds_total = backend->n_compat_fds + n_ready;
+  g_epoll_context_ensure_ready_size (backend, n_fds_total);
 
-  pollfd = backend->fds_ready + n_compat_fds;
+  pollfd = backend->fds_ready + backend->n_compat_fds;
   for (i = 0; i < n_ready; i++)
     {
-      const struct epoll_event *ev = backend->epoll_output + i;
+      const struct epoll_event *ev = &backend->epoll_output[i];
       pollfd->fd = ev->data.fd;
       pollfd->events = G_IO_IN|G_IO_OUT|G_IO_PRI;
       pollfd->revents = g_io_condition_from_epoll_events (ev->events);
@@ -360,7 +314,7 @@ g_epoll_context_iterate (gpointer backend_data,
     }
 
   sources_ready = g_main_context_check (backend->context, max_priority,
-      backend->fds_ready, n_compat_fds + n_ready);
+      backend->fds_ready, n_fds_total);
 
   if (dispatch && sources_ready)
     g_main_context_dispatch (backend->context);
@@ -371,9 +325,7 @@ g_epoll_context_iterate (gpointer backend_data,
 static int
 g_epoll_context_poll (GEpollLoopBackend *backend, gint timeout)
 {
-  gsize nfds;
-
-  nfds = g_atomic_int_get (&backend->n_poll_records);
+  guint nfds = backend->n_poll_records;
 
   /* Must pass a nonzero value to epoll_wait */
   if (nfds == 0)
@@ -416,12 +368,17 @@ g_epoll_context_add_fd (gpointer backend_data,
         {
           /* epoll does not think this descriptor is pollable */
 
-          LOCK_BACKEND (backend);
+          guint i_next = backend->n_compat_fds;
+          GPollFD *pollfd;
 
-          g_hash_table_replace (backend->compat_fds,
-              GINT_TO_POINTER (fd), GUINT_TO_POINTER (events));
+          g_epoll_context_ensure_ready_size (backend, i_next + 1);
 
-          UNLOCK_BACKEND (backend);
+          pollfd = &backend->fds_ready[i_next];
+          pollfd->fd = fd;
+          pollfd->events = events;
+          pollfd->revents = 0;
+
+          backend->n_compat_fds = i_next + 1;
 
           return TRUE;
         }
@@ -432,7 +389,7 @@ g_epoll_context_add_fd (gpointer backend_data,
         }
     }
 
-  g_atomic_int_inc (&backend->n_poll_records);
+  ++backend->n_poll_records;
 
   return TRUE;
 }
@@ -445,22 +402,17 @@ g_epoll_context_modify_fd (gpointer backend_data,
 {
   GEpollLoopBackend *backend = backend_data;
   struct epoll_event ev = { 0, };
-  gboolean is_compat;
+  guint i;
   int retval;
 
-  LOCK_BACKEND (backend);
-
-  is_compat = g_hash_table_contains (backend->compat_fds,
-      GINT_TO_POINTER (fd));
-
-  if (is_compat)
-    g_hash_table_replace (backend->compat_fds,
-        GINT_TO_POINTER (fd), GUINT_TO_POINTER (events));
-
-  UNLOCK_BACKEND (backend);
-
-  if (is_compat)
-    return TRUE;
+  for (i = 0; i < backend->n_compat_fds; i++)
+    {
+      if (backend->fds_ready[i].fd == fd)
+        {
+          backend->fds_ready[i].events = events;
+          return TRUE;
+        }
+    }
 
   ev.events = g_io_condition_to_epoll_events (events);
   ev.data.fd = fd;
@@ -479,20 +431,22 @@ g_epoll_context_remove_fd (gpointer backend_data, gint fd)
 {
   GEpollLoopBackend *backend = backend_data;
   struct epoll_event dummy_ev = { 0, };
-  gboolean was_compat_fd;
+  guint i;
   int retval;
 
-  LOCK_BACKEND (backend);
+  for (i = 0; i < backend->n_compat_fds; i++)
+    {
+      if (backend->fds_ready[i].fd == fd)
+        {
+          memmove (backend->fds_ready + i,
+                   backend->fds_ready + i + 1,
+                   backend->n_compat_fds - 1 - i);
+          --backend->n_compat_fds;
+          return TRUE;
+        }
+    }
 
-  was_compat_fd = g_hash_table_remove (backend->compat_fds,
-      GINT_TO_POINTER (fd));
-
-  UNLOCK_BACKEND (backend);
-
-  if (was_compat_fd)
-    return TRUE;
-
-  g_atomic_int_dec_and_test (&backend->n_poll_records);
+  --backend->n_poll_records;
 
   retval = epoll_ctl (backend->epoll_fd, EPOLL_CTL_DEL, fd, &dummy_ev);
 

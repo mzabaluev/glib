@@ -227,11 +227,16 @@ struct _GMainContext
 
   GHashTable *poll_fds;  /* map<int, GPollBin*> */
 
+  GHashTable *update_fds; /* set<int> */
+  GSList     *remove_fds; /* list<int> */
+
   GSequence *compat_polls;
 
   GWakeup *wakeup;
 
   GPollFD wake_up_rec;
+
+  gboolean poll_changed;
 
   gint64   time;
   gboolean time_is_fresh;
@@ -283,9 +288,10 @@ struct _GUnixSignalWatchSource
 
 struct _GPollBin
 {
-  GSList *pollfds;
-  gint    top_priority;
-  gushort events;
+  GSList  *pollfds;
+  gint     top_priority;
+  gushort  events;
+  gboolean on_backend;
 };
 
 struct _GCompatPollRec
@@ -306,7 +312,6 @@ struct _GSourcePrivate
    * let it remain empty on Windows) to avoid #ifdef all over the place.
    */
   GSList *fds;
-  GSList *zombie_fds;
 };
 
 typedef struct _GSourceIter
@@ -351,16 +356,17 @@ static void g_source_set_priority_unlocked      (GSource      *source,
 static void g_child_source_remove_internal      (GSource      *child_source,
                                                  GMainContext *context);
 
-static gboolean g_main_context_add_poll_unlocked    (GMainContext *context,
-                                                     GPollFD      *fd,
-                                                     gint          priority,
-                                                     gboolean      internal);
-static gboolean g_main_context_remove_poll_unlocked (GMainContext *context,
-                                                     GPollFD      *fd,
-                                                     gboolean      internal);
-static void     g_main_context_modify_poll_unlocked (GMainContext *context,
-                                                     gint          priority,
-                                                     GPollFD      *fd);
+static void g_main_context_add_poll_unlocked    (GMainContext *context,
+                                                 GPollFD      *fd,
+                                                 gint          priority,
+                                                 gboolean      internal);
+static void g_main_context_remove_poll_unlocked (GMainContext *context,
+                                                 GPollFD      *fd,
+                                                 gboolean      internal);
+static void g_main_context_modify_poll_unlocked (GMainContext *context,
+                                                 GPollFD      *fd,
+                                                 gint          priority);
+static void g_main_context_update_backend_fds   (GMainContext *context);
 
 static void g_main_context_add_compat_poll      (GMainContext *context,
                                                  gint priority,
@@ -408,12 +414,14 @@ static gboolean g_idle_dispatch    (GSource     *source,
 
 static void block_source (GSource *source);
 
-static GSList *add_or_prune_source_fds    (GSource *source,
-                                           GSList *fds,
-                                           gboolean internal);
-static GSList *remove_or_prune_source_fds (GSource *source,
-                                           GSList *fds,
-                                           gboolean internal);
+static void register_source_fds   (const GSource *source,
+                                   const GSList  *fds,
+                                   gboolean       internal);
+static void unregister_source_fds (const GSource *source,
+                                   const GSList  *fds,
+                                   gboolean       internal);
+static void reregister_source_fds (const GSource *source,
+                                   const GSList *fds);
 
 static void poll_bin_free (GPollBin *bin);
 
@@ -544,6 +552,9 @@ g_main_context_unref (GMainContext *context)
 
   g_hash_table_destroy (context->poll_fds);
 
+  g_hash_table_destroy (context->update_fds);
+  g_slist_free (context->remove_fds);
+
   g_sequence_free (context->compat_polls);
 
   if (context->overflow_used_source_ids)
@@ -609,6 +620,8 @@ g_main_context_new_with_backend (const GMainContextFuncs *funcs,
 
   context->poll_fds = g_hash_table_new_full (g_direct_hash, g_direct_equal,
       NULL, (GDestroyNotify) poll_bin_free);
+
+  context->update_fds = g_hash_table_new (g_direct_hash, g_direct_equal);
 
   context->compat_polls = g_sequence_new ((GDestroyNotify) compat_poll_free);
 
@@ -1423,10 +1436,6 @@ g_source_remove_poll (GSource *source,
   g_return_if_fail (fd != NULL);
   g_return_if_fail (!SOURCE_DESTROYED (source));
   
-  /* May have been pruned from the list already */
-  if (!g_slist_find (source->poll_fds, fd))
-    return;
-
   context = source->context;
 
   if (context)
@@ -1714,16 +1723,13 @@ g_source_set_priority_unlocked (GSource      *source,
 
       if (!SOURCE_BLOCKED (source))
 	{
-          tmp_list = remove_or_prune_source_fds (source, source->poll_fds, FALSE);
-          tmp_list = add_or_prune_source_fds (source, tmp_list, FALSE);
-          /* Cache-friendly, makes for a convenient breakpoint location */
-          if (tmp_list != source->poll_fds)
-            source->poll_fds = tmp_list;
+          /* Re-register all fds with the new priority */
+          unregister_source_fds (source, source->poll_fds, FALSE);
+          register_source_fds (source, source->poll_fds, FALSE);
 
-          tmp_list = remove_or_prune_source_fds (source, source->priv->fds, TRUE);
-          tmp_list = add_or_prune_source_fds (source, tmp_list, TRUE);
-          if (tmp_list != source->priv->fds)
-            source->priv->fds = tmp_list;
+          /* The new-style fds don't have the compatibility baggage,
+           * so they can be modified in place */
+          reregister_source_fds (source, source->priv->fds);
 	}
     }
 
@@ -2060,7 +2066,6 @@ g_source_unref_internal (GSource      *source,
       source->poll_fds = NULL;
 
       g_slist_free_full (source->priv->fds, g_free);
-      g_slist_free_full (source->priv->zombie_fds, g_free);
 
       g_slice_free (GSourcePrivate, source->priv);
       source->priv = NULL;
@@ -2409,8 +2414,8 @@ g_source_modify_unix_fd (GSource      *source,
       LOCK_CONTEXT (context);
 
       if (!SOURCE_BLOCKED (source))
-        g_main_context_modify_poll_unlocked (context, source->priority,
-                                             poll_fd);
+        g_main_context_modify_poll_unlocked (context,
+            poll_fd, source->priority);
 
       UNLOCK_CONTEXT (context);
     }
@@ -2439,31 +2444,22 @@ g_source_remove_unix_fd (GSource  *source,
   GPollFD *poll_fd;
 
   g_return_if_fail (source != NULL);
+  g_return_if_fail (g_slist_find (source->priv->fds, tag));
 
+  context = source->context;
   poll_fd = tag;
 
-  if (!g_slist_find (source->priv->fds, poll_fd))
+  if (context)
+    LOCK_CONTEXT (context);
+
+  source->priv->fds = g_slist_remove (source->priv->fds, poll_fd);
+
+  if (context)
     {
-      g_return_if_fail (g_slist_find (source->priv->zombie_fds, poll_fd));
-      source->priv->zombie_fds =
-          g_slist_remove (source->priv->zombie_fds, poll_fd);
-    }
-  else
-    {
-      context = source->context;
+      if (!SOURCE_BLOCKED (source))
+        g_main_context_remove_poll_unlocked (context, poll_fd, TRUE);
 
-      if (context)
-        LOCK_CONTEXT (context);
-
-      source->priv->fds = g_slist_remove (source->priv->fds, poll_fd);
-
-      if (context)
-        {
-          if (!SOURCE_BLOCKED (source))
-            g_main_context_remove_poll_unlocked (context, poll_fd, TRUE);
-
-          UNLOCK_CONTEXT (context);
-        }
+      UNLOCK_CONTEXT (context);
     }
 
   g_free (poll_fd);
@@ -3006,78 +3002,36 @@ g_source_is_destroyed (GSource *source)
 }
 
 /* HOLDS: source->context's lock */
-static GSList *
-add_or_prune_source_fds (GSource *source, GSList *fds, gboolean internal)
+static void
+register_source_fds (const GSource *source, const GSList *fds, gboolean internal)
 {
-  GSList *curr, *prev;
+  const GSList *item;
 
-  curr = fds;
-  prev = NULL;
-  while (curr != NULL)
-    {
-      if (g_main_context_add_poll_unlocked (source->context, curr->data,
-            source->priority, internal))
-        {
-          prev = curr;
-          curr = curr->next;
-        }
-      else
-        {
-          GSList *tmp = curr;
-          GPollFD *fd = tmp->data;
-          fd->revents = G_IO_NVAL;
-          curr = curr->next;
-          if (internal)
-            {
-              tmp->next = source->priv->zombie_fds;
-              source->priv->zombie_fds = tmp;
-            }
-          if (prev == NULL)
-            fds = curr;
-          else
-            prev->next = curr;
-        }
-    }
-
-  return fds;
+  for (item = fds; item != NULL; item = item->next)
+    g_main_context_add_poll_unlocked (source->context, item->data,
+        source->priority, internal);
 }
 
 /* HOLDS: source->context's lock */
-static GSList *
-remove_or_prune_source_fds (GSource *source, GSList *fds, gboolean internal)
+static void
+unregister_source_fds (const GSource *source, const GSList *fds, gboolean internal)
 {
-  GSList *curr, *prev;
+  const GSList *item;
 
-  curr = fds;
-  prev = NULL;
-  while (curr != NULL)
-    {
-      if (g_main_context_remove_poll_unlocked (source->context, curr->data,
-            internal))
-        {
-          prev = curr;
-          curr = curr->next;
-        }
-      else
-        {
-          GSList *tmp = curr;
-          GPollFD *fd = tmp->data;
-          fd->revents = G_IO_NVAL;
-          curr = curr->next;
-          if (internal)
-            {
-              tmp->next = source->priv->zombie_fds;
-              source->priv->zombie_fds = tmp;
-            }
-          g_slist_free1 (tmp);
-          if (prev == NULL)
-            fds = curr;
-          else
-            prev->next = curr;
-        }
-    }
+  for (item = fds; item != NULL; item = item->next)
+    g_main_context_remove_poll_unlocked (source->context, item->data,
+        internal);
+}
 
-  return fds;
+/* HOLDS: source->context's lock */
+static void
+reregister_source_fds (const GSource *source, const GSList *fds)
+{
+  const GSList *item;
+
+  for (item = fds; item != NULL; item = item->next)
+    g_main_context_modify_poll_unlocked (source->context, item->data,
+        source->priority);
 }
 
 /* Temporarily remove all this source's file descriptors from the
@@ -3096,9 +3050,9 @@ block_source (GSource *source)
 
   if (source->context)
     {
-      source->poll_fds = remove_or_prune_source_fds (source,
+      unregister_source_fds (source,
           source->poll_fds, FALSE);
-      source->priv->fds = remove_or_prune_source_fds (source,
+      unregister_source_fds (source,
           source->priv->fds, TRUE);
     }
 
@@ -3124,8 +3078,8 @@ unblock_source (GSource *source)
   
   source->flags &= ~G_SOURCE_BLOCKED;
 
-  source->poll_fds = add_or_prune_source_fds (source, source->poll_fds, FALSE);
-  source->priv->fds = add_or_prune_source_fds (source, source->priv->fds, TRUE);
+  register_source_fds (source, source->poll_fds, FALSE);
+  register_source_fds (source, source->priv->fds, TRUE);
 
   if (source->priv && source->priv->child_sources)
     {
@@ -3599,6 +3553,8 @@ g_main_context_prepare (GMainContext *context,
 	}
     }
   g_source_iter_clear (&iter);
+
+  g_main_context_update_backend_fds (context);
 
   g_main_context_reset_compat_polls (context, current_priority);
 
@@ -4213,7 +4169,7 @@ g_main_context_add_poll (GMainContext *context,
   UNLOCK_CONTEXT (context);
 }
 
-static gboolean
+static void
 g_main_context_add_poll_unlocked (GMainContext *context,
                                   GPollFD      *fd,
                                   gint          priority,
@@ -4221,7 +4177,7 @@ g_main_context_add_poll_unlocked (GMainContext *context,
 {
   gpointer poll_key = GINT_TO_POINTER (fd->fd);
   GPollBin *bin;
-  gboolean result;
+  gboolean needs_update = FALSE;
 
   bin = g_hash_table_lookup (context->poll_fds, poll_key);
   if (bin == NULL)
@@ -4236,13 +4192,10 @@ g_main_context_add_poll_unlocked (GMainContext *context,
        */
       bin->events = fd->events & ~G_POLL_NON_MASKED;
       g_hash_table_insert (context->poll_fds, poll_key, bin);
-
-      result = context->funcs->add_fd (context->backend_data,
-          fd->fd, bin->events, priority);
+      needs_update = TRUE;
     }
   else
     {
-      gboolean needs_update = FALSE;
       gushort events;
 
       bin->pollfds = g_slist_prepend (bin->pollfds, fd);
@@ -4259,23 +4212,24 @@ g_main_context_add_poll_unlocked (GMainContext *context,
           bin->events |= events;
           needs_update = TRUE;
         }
-
-      if (needs_update)
-        {
-          result = context->funcs->modify_fd (context->backend_data,
-              fd->fd, bin->events, bin->top_priority);
-        }
-      else
-        result = TRUE;
     }
 
   /* This file descriptor may be checked before we ever poll */
   fd->revents = 0;
 
-  if (result && !internal)
+  if (!internal)
     g_main_context_add_compat_poll (context, priority, fd);
 
-  return result;
+  if (needs_update)
+    {
+      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+
+      if (!context->poll_changed)
+        {
+          context->poll_changed = TRUE;
+          g_wakeup_signal (context->wakeup);
+        }
+    }
 }
 
 /**
@@ -4292,7 +4246,7 @@ g_main_context_remove_poll (GMainContext *context,
 {
   if (!context)
     context = g_main_context_default ();
-  
+
   g_return_if_fail (g_atomic_int_get (&context->ref_count) > 0);
   g_return_if_fail (fd);
 
@@ -4301,7 +4255,7 @@ g_main_context_remove_poll (GMainContext *context,
   UNLOCK_CONTEXT (context);
 }
 
-static gboolean
+static void
 g_main_context_remove_poll_unlocked (GMainContext *context,
                                      GPollFD      *fd,
                                      gboolean      internal)
@@ -4310,10 +4264,10 @@ g_main_context_remove_poll_unlocked (GMainContext *context,
   GPollBin *bin;
   GSList *cur_item, *prev_item;
   gushort events;
-  gboolean result;
+  gboolean needs_wakeup = FALSE;
 
   bin = g_hash_table_lookup (context->poll_fds, poll_key);
-  g_return_val_if_fail (bin != NULL, FALSE);
+  g_return_if_fail (bin != NULL);
 
   if (!internal)
     g_main_context_remove_compat_poll (context, bin->top_priority, fd);
@@ -4344,35 +4298,45 @@ g_main_context_remove_poll_unlocked (GMainContext *context,
 
   if (bin->pollfds == NULL)
     {
-      g_hash_table_remove (context->poll_fds, poll_key);
+      g_hash_table_remove (context->update_fds, poll_key);
+      if (bin->on_backend)
+        {
+          context->remove_fds = g_slist_prepend (context->remove_fds, poll_key);
+          needs_wakeup = TRUE;
+        }
 
-      result = context->funcs->remove_fd (context->backend_data, fd->fd);
+      g_hash_table_remove (context->poll_fds, poll_key);
+      bin = NULL;
     }
   else if (bin->events != events)
     {
       bin->events = events;
 
-      /* The highest reached priority in the bin does not necessarily
+      /* No data preserved to recalculate bin->top_priority.
+       * The highest reached priority in the bin does not necessarily
        * reflect any of the remaining entries, but multiple GPollFDs
        * with different I/O priorities for a single file descriptor are a
        * corner case of a corner case, and backends like epoll do not
        * support the concept of priorities anyway. Sources falling
        * behind the iteration's dispatch priority level will be ignored
-       * even if there are events for their fds.
+       * even if there are events reported for their fds.
        */
-      result = context->funcs->modify_fd (context->backend_data,
-          fd->fd, events, bin->top_priority);
-    }
-  else
-    result = TRUE;
 
-  return result;
+      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+      needs_wakeup = TRUE;
+    }
+
+  if (needs_wakeup && !context->poll_changed)
+    {
+      context->poll_changed = TRUE;
+      g_wakeup_signal (context->wakeup);
+    }
 }
 
 static void
 g_main_context_modify_poll_unlocked (GMainContext *context,
-                                     gint          priority,
-                                     GPollFD      *fd)
+                                     GPollFD      *fd,
+                                     gint          priority)
 {
   GPollBin *bin;
   GSList *poll_item;
@@ -4400,10 +4364,16 @@ g_main_context_modify_poll_unlocked (GMainContext *context,
       bin->top_priority = priority;
       needs_update = TRUE;
     }
+
   if (needs_update)
     {
-      context->funcs->modify_fd (context->backend_data,
-          fd->fd, bin->events, bin->top_priority);
+      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+
+      if (!context->poll_changed)
+        {
+          context->poll_changed = TRUE;
+          g_wakeup_signal (context->wakeup);
+        }
     }
 }
 
@@ -4412,6 +4382,45 @@ poll_bin_free (GPollBin *bin)
 {
   g_slist_free (bin->pollfds);
   g_slice_free (GPollBin, bin);
+}
+
+static void
+poll_update_walk (gpointer key, gpointer value, gpointer user_data)
+{
+  GMainContext *context = user_data;
+  GPollBin *bin;
+  int fd = GPOINTER_TO_INT (key);
+
+  bin = g_hash_table_lookup (context->poll_fds, key);
+
+  g_return_if_fail (bin != NULL);
+
+  if (!bin->on_backend)
+    bin->on_backend = context->funcs->add_fd (context->backend_data,
+        fd, bin->events, bin->top_priority);
+  else
+    context->funcs->modify_fd (context->backend_data,
+        fd, bin->events, bin->top_priority);
+}
+
+/* HOLDS: context's lock */
+static void
+g_main_context_update_backend_fds (GMainContext *context)
+{
+  GSList *item;
+
+  for (item = context->remove_fds; item != NULL; item = item->next)
+    {
+      context->funcs->remove_fd (context->backend_data,
+          GPOINTER_TO_INT (item->data));
+    }
+  g_slist_free (context->remove_fds);
+  context->remove_fds = NULL;
+
+  g_hash_table_foreach (context->update_fds, poll_update_walk, context);
+  g_hash_table_remove_all (context->update_fds);
+
+  context->poll_changed = FALSE;
 }
 
 static gint
@@ -4504,7 +4513,7 @@ g_main_context_reset_compat_polls (GMainContext *context, gint max_priority)
       if (rec->saved_events != pollfd->events)
         {
           /* The application has changed pollfd->events behind our back. */
-          g_main_context_modify_poll_unlocked (context, rec->priority, pollfd);
+          g_main_context_modify_poll_unlocked (context, pollfd, rec->priority);
         }
 
       iter = g_sequence_iter_next (iter);
@@ -4574,10 +4583,9 @@ static void
 reregister_poll_walk (gpointer key, gpointer value, gpointer user_data)
 {
   GMainContext *context = user_data;
-  gint fd = GPOINTER_TO_INT (key);
   GPollBin *bin = value;
-  context->funcs->add_fd (context->backend_data,
-      fd, bin->events, bin->top_priority);
+  bin->on_backend = FALSE;
+  g_hash_table_add (context->update_fds, key);
 }
 
 /* HOLDS: context's lock */
@@ -4595,6 +4603,9 @@ g_main_context_force_poll_backend (GMainContext *context)
 
   g_hash_table_foreach (context->poll_fds,
                         reregister_poll_walk, context);
+
+  context->poll_changed = TRUE;
+  g_wakeup_signal (context->wakeup);
 }
 
 /**

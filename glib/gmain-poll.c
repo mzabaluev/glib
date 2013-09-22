@@ -51,21 +51,13 @@ struct _GPollLoopBackend
 {
   GMainContext *context;
 
-  GMutex mutex;
-
   GPollRec *poll_records, *poll_records_tail;
   guint n_poll_records;
   GPollFD *cached_poll_array;
   guint cached_poll_array_size;
 
-  /* Flag indicating whether the set of fd's changed during a poll */
-  gboolean poll_changed;
-
-  GPollFunc poll_func;
+  volatile GPollFunc poll_func;
 };
-
-#define LOCK_BACKEND(backend) g_mutex_lock (&backend->mutex)
-#define UNLOCK_BACKEND(backend) g_mutex_unlock (&backend->mutex)
 
 static gpointer g_poll_context_create      (gpointer user_data);
 static void     g_poll_context_set_context (gpointer backend_data,
@@ -116,12 +108,7 @@ g_poll_context_create (G_GNUC_UNUSED gpointer user_data)
 
   backend = g_slice_new0 (GPollLoopBackend);
 
-  g_mutex_init (&backend->mutex);
-
-  backend->poll_func = g_poll;
-
-  backend->cached_poll_array = NULL;
-  backend->cached_poll_array_size = 0;
+  g_atomic_pointer_set (&backend->poll_func, g_poll);
 
   return backend;
 }
@@ -137,8 +124,6 @@ static void
 g_poll_context_free (gpointer backend_data)
 {
   GPollLoopBackend *backend = backend_data;
-
-  g_mutex_clear (&backend->mutex);
 
   g_free (backend->cached_poll_array);
 
@@ -164,10 +149,9 @@ g_poll_context_iterate (gpointer backend_data,
   gint timeout;
   gint nfds, allocated_nfds;
   GPollFD *fds = NULL;
-  gboolean poll_changed;
   gboolean sources_ready;
 
-  LOCK_BACKEND (backend);
+  g_main_context_prepare (backend->context, &max_priority);
 
   if (!backend->cached_poll_array)
     {
@@ -175,12 +159,8 @@ g_poll_context_iterate (gpointer backend_data,
       backend->cached_poll_array = g_new (GPollFD, backend->n_poll_records);
     }
 
-  UNLOCK_BACKEND (backend);
-
   allocated_nfds = backend->cached_poll_array_size;
   fds = backend->cached_poll_array;
-
-  g_main_context_prepare (backend->context, &max_priority);
 
   while ((nfds = g_poll_context_query (backend, max_priority, fds,
                                        allocated_nfds)) > allocated_nfds)
@@ -194,19 +174,10 @@ g_poll_context_iterate (gpointer backend_data,
 
   g_poll_context_poll (backend, timeout, max_priority, fds, nfds);
 
-  /* If the set of poll file descriptors changed, bail out
-   * and let the main loop rerun
-   */
-  LOCK_BACKEND (backend);
-  poll_changed = backend->poll_changed;
-  UNLOCK_BACKEND (backend);
-  if (poll_changed)
-    return FALSE;
-
   sources_ready = g_main_context_check (backend->context, max_priority,
       fds, nfds);
 
-  if (dispatch && sources_ready)
+  if (sources_ready && dispatch)
     g_main_context_dispatch (backend->context);
 
   return sources_ready;
@@ -227,11 +198,7 @@ g_poll_context_poll (GPollLoopBackend *backend,
 
   if (n_fds || timeout != 0)
     {
-      LOCK_BACKEND (backend);
-
-      poll_func = backend->poll_func;
-
-      UNLOCK_BACKEND (backend);
+      poll_func = g_atomic_pointer_get(&backend->poll_func);
 
 #ifdef  G_MAIN_POLL_DEBUG
       if (_g_main_poll_debug)
@@ -311,8 +278,6 @@ g_poll_context_add_fd (gpointer backend_data,
   newrec->events = events;
   newrec->priority = priority;
 
-  LOCK_BACKEND (backend);
-
   prevrec = backend->poll_records_tail;
   nextrec = NULL;
   while (prevrec && priority < prevrec->priority)
@@ -336,13 +301,6 @@ g_poll_context_add_fd (gpointer backend_data,
 
   backend->n_poll_records++;
 
-  backend->poll_changed = TRUE;
-
-  UNLOCK_BACKEND (backend);
-
-  /* Now wake up the main loop if it is waiting in the poll() */
-  g_main_context_wakeup (backend->context);
-
   return TRUE;
 }
 
@@ -351,8 +309,6 @@ g_poll_context_remove_fd (gpointer backend_data, gint fd)
 {
   GPollLoopBackend *backend = backend_data;
   GPollRec *pollrec, *prevrec, *nextrec;
-
-  LOCK_BACKEND (backend);
 
   prevrec = NULL;
   pollrec = backend->poll_records;
@@ -381,12 +337,7 @@ g_poll_context_remove_fd (gpointer backend_data, gint fd)
       pollrec = nextrec;
     }
 
-  backend->poll_changed = TRUE;
-
-  UNLOCK_BACKEND (backend);
-
-  /* Now wake up the main loop if it is waiting in the poll() */
-  g_main_context_wakeup (backend->context);
+  g_return_val_if_fail (pollrec != NULL, FALSE);
 
   return TRUE;
 }
@@ -399,8 +350,6 @@ g_poll_context_modify_fd (gpointer backend_data,
 {
   GPollLoopBackend *backend = backend_data;
   GPollRec *pollrec;
-
-  LOCK_BACKEND (backend);
 
   pollrec = backend->poll_records;
 
@@ -415,12 +364,7 @@ g_poll_context_modify_fd (gpointer backend_data,
       pollrec = pollrec->next;
     }
 
-  backend->poll_changed = TRUE;
-
-  UNLOCK_BACKEND (backend);
-
-  /* Now wake up the main loop if it is waiting in the poll() */
-  g_main_context_wakeup (backend->context);
+  g_return_val_if_fail (pollrec != NULL, FALSE);
 
   return TRUE;
 }
@@ -431,13 +375,9 @@ g_poll_context_query (GPollLoopBackend *backend,
                       GPollFD *fds,
                       gint     n_fds)
 {
-  gint n_poll;
-  GPollRec *pollrec;
+  GPollRec *pollrec = backend->poll_records;
+  gint n_poll = 0;
 
-  LOCK_BACKEND (backend);
-
-  pollrec = backend->poll_records;
-  n_poll = 0;
   while (pollrec && max_priority >= pollrec->priority)
     {
       if (n_poll < n_fds && pollrec->events != 0)
@@ -451,10 +391,6 @@ g_poll_context_query (GPollLoopBackend *backend,
       n_poll++;
     }
 
-  backend->poll_changed = FALSE;
-
-  UNLOCK_BACKEND (backend);
-
   return n_poll;
 }
 
@@ -463,7 +399,8 @@ _g_main_compat_set_poll_func (gpointer backend_data, GPollFunc func)
 {
   GPollLoopBackend *backend = backend_data;
 
-  LOCK_BACKEND (backend);
-  backend->poll_func = (func != NULL)? func : g_poll;
-  UNLOCK_BACKEND (backend);
+  if (func == NULL)
+    func = g_poll;
+
+  g_atomic_pointer_set (&backend->poll_func, func);
 }
