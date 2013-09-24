@@ -227,8 +227,8 @@ struct _GMainContext
 
   GHashTable *poll_fds;  /* map<int, GPollBin*> */
 
-  GHashTable *update_fds; /* set<int> */
-  GSList     *remove_fds; /* list<int> */
+  GPollBin *update_list_head;
+  GSList *remove_fds; /* list<int> */
 
   GSequence *compat_polls;
 
@@ -288,10 +288,13 @@ struct _GUnixSignalWatchSource
 
 struct _GPollBin
 {
-  GSList  *pollfds;
-  gint     top_priority;
-  gushort  events;
-  gboolean on_backend;
+  GSList   *pollfds;
+  gint      top_priority;
+  gushort   events;
+  gushort   on_backend     :1;
+  gushort   pending_update :1;
+  GPollBin *update_next;
+  GPollBin *update_prev;
 };
 
 struct _GCompatPollRec
@@ -552,7 +555,6 @@ g_main_context_unref (GMainContext *context)
 
   g_hash_table_destroy (context->poll_fds);
 
-  g_hash_table_destroy (context->update_fds);
   g_slist_free (context->remove_fds);
 
   g_sequence_free (context->compat_polls);
@@ -620,8 +622,6 @@ g_main_context_new_with_backend (const GMainContextFuncs *funcs,
 
   context->poll_fds = g_hash_table_new_full (g_direct_hash, g_direct_equal,
       NULL, (GDestroyNotify) poll_bin_free);
-
-  context->update_fds = g_hash_table_new (g_direct_hash, g_direct_equal);
 
   context->compat_polls = g_sequence_new ((GDestroyNotify) compat_poll_free);
 
@@ -4140,6 +4140,45 @@ g_main_loop_get_context (GMainLoop *loop)
   return loop->context;
 }
 
+/* HOLDS: context's lock */
+static void
+g_main_context_add_to_update_list (GMainContext *context, GPollBin *bin)
+{
+  GPollBin *next;
+
+  /* Do nothing if already in the list */
+  if (bin->pending_update)
+    return;
+
+  bin->pending_update = TRUE;
+
+  next = context->update_list_head;
+  bin->update_next = next;
+  context->update_list_head = bin;
+  if (next != NULL)
+    next->update_prev = bin;
+}
+
+/* HOLDS: context's lock */
+static void
+g_main_context_remove_from_update_list (GMainContext *context, GPollBin *bin)
+{
+  GPollBin *prev = bin->update_prev;
+  GPollBin *next = bin->update_next;
+
+  bin->pending_update = FALSE;
+  bin->update_prev = NULL;
+  bin->update_next = NULL;
+
+  if (prev == NULL)
+    context->update_list_head = next;
+  else
+    prev->update_next = next;
+
+  if (next != NULL)
+    next->update_prev = prev;
+}
+
 /**
  * g_main_context_add_poll:
  * @context: (allow-none): a #GMainContext (or %NULL for the default context)
@@ -4222,7 +4261,7 @@ g_main_context_add_poll_unlocked (GMainContext *context,
 
   if (needs_update)
     {
-      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+      g_main_context_add_to_update_list (context, bin);
 
       if (!context->poll_changed)
         {
@@ -4298,7 +4337,8 @@ g_main_context_remove_poll_unlocked (GMainContext *context,
 
   if (bin->pollfds == NULL)
     {
-      g_hash_table_remove (context->update_fds, poll_key);
+      g_main_context_remove_from_update_list (context, bin);
+
       if (bin->on_backend)
         {
           context->remove_fds = g_slist_prepend (context->remove_fds, poll_key);
@@ -4322,7 +4362,8 @@ g_main_context_remove_poll_unlocked (GMainContext *context,
        * even if there are events reported for their fds.
        */
 
-      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+      g_main_context_add_to_update_list (context, bin);
+
       needs_wakeup = TRUE;
     }
 
@@ -4367,7 +4408,7 @@ g_main_context_modify_poll_unlocked (GMainContext *context,
 
   if (needs_update)
     {
-      g_hash_table_add (context->update_fds, GINT_TO_POINTER (fd->fd));
+      g_main_context_add_to_update_list (context, bin);
 
       if (!context->poll_changed)
         {
@@ -4384,30 +4425,12 @@ poll_bin_free (GPollBin *bin)
   g_slice_free (GPollBin, bin);
 }
 
-static void
-poll_update_walk (gpointer key, gpointer value, gpointer user_data)
-{
-  GMainContext *context = user_data;
-  GPollBin *bin;
-  int fd = GPOINTER_TO_INT (key);
-
-  bin = g_hash_table_lookup (context->poll_fds, key);
-
-  g_return_if_fail (bin != NULL);
-
-  if (!bin->on_backend)
-    bin->on_backend = context->funcs->add_fd (context->backend_data,
-        fd, bin->events, bin->top_priority);
-  else
-    context->funcs->modify_fd (context->backend_data,
-        fd, bin->events, bin->top_priority);
-}
-
 /* HOLDS: context's lock */
 static void
 g_main_context_update_backend_fds (GMainContext *context)
 {
   GSList *item;
+  GPollBin *bin;
 
   for (item = context->remove_fds; item != NULL; item = item->next)
     {
@@ -4417,9 +4440,30 @@ g_main_context_update_backend_fds (GMainContext *context)
   g_slist_free (context->remove_fds);
   context->remove_fds = NULL;
 
-  g_hash_table_foreach (context->update_fds, poll_update_walk, context);
-  g_hash_table_remove_all (context->update_fds);
+  bin = context->update_list_head;
+  while (bin != NULL)
+    {
+      GPollBin *next;
+      int fd;
 
+      g_assert (bin->pollfds != NULL);
+
+      fd = ((GPollFD *) bin->pollfds->data)->fd;
+      if (!bin->on_backend)
+        bin->on_backend = context->funcs->add_fd (context->backend_data,
+            fd, bin->events, bin->top_priority);
+      else
+        context->funcs->modify_fd (context->backend_data,
+            fd, bin->events, bin->top_priority);
+
+      next = bin->update_next;
+      bin->pending_update = FALSE;
+      bin->update_prev = NULL;
+      bin->update_next = NULL;
+      bin = next;
+    }
+
+  context->update_list_head = NULL;
   context->poll_changed = FALSE;
 }
 
@@ -4585,7 +4629,8 @@ reregister_poll_walk (gpointer key, gpointer value, gpointer user_data)
   GMainContext *context = user_data;
   GPollBin *bin = value;
   bin->on_backend = FALSE;
-  g_hash_table_add (context->update_fds, key);
+  bin->pending_update = FALSE;
+  g_main_context_add_to_update_list (context, bin);
 }
 
 /* HOLDS: context's lock */
