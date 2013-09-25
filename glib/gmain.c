@@ -4179,6 +4179,21 @@ g_main_context_remove_from_update_list (GMainContext *context, GPollBin *bin)
     next->update_prev = prev;
 }
 
+/* HOLDS: context's lock */
+static void
+g_main_context_wake_for_changes (GMainContext *context)
+{
+  if (context->poll_changed)
+    return;  /* pending changes signalled already */
+
+  if (context->owner != NULL && context->owner == G_THREAD_SELF)
+    return;  /* this thread is iterating the context, no use for wakeup */
+
+  g_wakeup_signal (context->wakeup);
+
+  context->poll_changed = TRUE;
+}
+
 /**
  * g_main_context_add_poll:
  * @context: (allow-none): a #GMainContext (or %NULL for the default context)
@@ -4262,12 +4277,7 @@ g_main_context_add_poll_unlocked (GMainContext *context,
   if (needs_update)
     {
       g_main_context_add_to_update_list (context, bin);
-
-      if (!context->poll_changed)
-        {
-          context->poll_changed = TRUE;
-          g_wakeup_signal (context->wakeup);
-        }
+      g_main_context_wake_for_changes (context);
     }
 }
 
@@ -4367,11 +4377,8 @@ g_main_context_remove_poll_unlocked (GMainContext *context,
       needs_wakeup = TRUE;
     }
 
-  if (needs_wakeup && !context->poll_changed)
-    {
-      context->poll_changed = TRUE;
-      g_wakeup_signal (context->wakeup);
-    }
+  if (needs_wakeup)
+    g_main_context_wake_for_changes (context);
 }
 
 static void
@@ -4409,12 +4416,7 @@ g_main_context_modify_poll_unlocked (GMainContext *context,
   if (needs_update)
     {
       g_main_context_add_to_update_list (context, bin);
-
-      if (!context->poll_changed)
-        {
-          context->poll_changed = TRUE;
-          g_wakeup_signal (context->wakeup);
-        }
+      g_main_context_wake_for_changes (context);
     }
 }
 
