@@ -3712,6 +3712,13 @@ context_begin_internal_poll (GMainContext *context)
         }
       else
         {
+#ifdef HAVE_SYS_EPOLL_H
+          funcs = &_g_epoller_funcs;
+          poller_data = _g_epoller_new ();
+#endif
+        }
+      if (poller_data == NULL)
+        {
           funcs = &_g_baseline_poller_funcs;
           poller_data = _g_baseline_poller_new (g_poll);
         }
