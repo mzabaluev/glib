@@ -49,6 +49,12 @@ typedef struct _GBaselinePollerData GBaselinePollerData;
 extern GPollerFuncs _g_baseline_poller_funcs;
 GBaselinePollerData *_g_baseline_poller_new (GPollFunc func);
 
+#ifdef HAVE_SYS_EPOLL_H
+typedef struct _GEpollerData GEpollerData;
+extern GPollerFuncs _g_epoller_funcs;
+GEpollerData *_g_epoller_new (void);
+#endif
+
 /* Functions supporting poll-centric API on GMainContext */
 void      _g_baseline_poller_set_poll_func (GBaselinePollerData *backend,
                                             GPollFunc func);
