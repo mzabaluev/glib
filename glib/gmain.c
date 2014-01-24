@@ -591,7 +591,7 @@ GMainContext *
 g_main_context_ref (GMainContext *context)
 {
   g_return_val_if_fail (context != NULL, NULL);
-  g_return_val_if_fail (g_atomic_int_get (&context->ref_count) > 0, NULL); 
+  g_return_val_if_fail (g_atomic_int_get (&context->ref_count) > 0, NULL);
 
   g_atomic_int_inc (&context->ref_count);
 
@@ -615,7 +615,7 @@ g_main_context_unref (GMainContext *context)
   guint i;
 
   g_return_if_fail (context != NULL);
-  g_return_if_fail (g_atomic_int_get (&context->ref_count) > 0); 
+  g_return_if_fail (g_atomic_int_get (&context->ref_count) > 0);
 
   if (!g_atomic_int_dec_and_test (&context->ref_count))
     return;
@@ -3356,7 +3356,7 @@ g_main_context_acquire (GMainContext *context)
 
   if (context == NULL)
     context = g_main_context_default ();
-  
+
   LOCK_CONTEXT (context);
 
   if (!context->owner)
@@ -3371,15 +3371,15 @@ g_main_context_acquire (GMainContext *context)
       result = TRUE;
     }
 
-  UNLOCK_CONTEXT (context); 
-  
+  UNLOCK_CONTEXT (context);
+
   return result;
 }
 
 /**
  * g_main_context_release:
  * @context: a #GMainContext
- * 
+ *
  * Releases ownership of a context previously acquired by this thread
  * with g_main_context_acquire(). If the context was acquired multiple
  * times, the ownership will be released only when g_main_context_release()
@@ -3390,7 +3390,7 @@ g_main_context_release (GMainContext *context)
 {
   if (context == NULL)
     context = g_main_context_default ();
-  
+
   LOCK_CONTEXT (context);
 
   context->owner_count--;
@@ -3414,7 +3414,7 @@ g_main_context_release (GMainContext *context)
 	}
     }
 
-  UNLOCK_CONTEXT (context); 
+  UNLOCK_CONTEXT (context);
 }
 
 /**
@@ -4300,9 +4300,9 @@ g_main_context_iteration (GMainContext *context, gboolean may_block)
  * @is_running: set to %TRUE to indicate that the loop is running. This
  * is not very important since calling g_main_loop_run() will set this to
  * %TRUE anyway.
- * 
+ *
  * Creates a new #GMainLoop structure.
- * 
+ *
  * Returns: a new #GMainLoop.
  **/
 GMainLoop *
@@ -4313,7 +4313,7 @@ g_main_loop_new (GMainContext *context,
 
   if (!context)
     context = g_main_context_default();
-  
+
   g_main_context_ref (context);
 
   loop = g_new0 (GMainLoop, 1);
@@ -4352,7 +4352,7 @@ g_main_loop_new_with_poller (GMainContext *context,
  * @loop: a #GMainLoop
  * 
  * Increases the reference count on a #GMainLoop object by one.
- * 
+ *
  * Returns: @loop
  **/
 GMainLoop *
@@ -4595,14 +4595,14 @@ g_main_loop_run (GMainLoop *loop)
 /**
  * g_main_loop_quit:
  * @loop: a #GMainLoop
- * 
- * Stops a #GMainLoop from running. Any calls to g_main_loop_run()
- * for the loop will return. 
  *
- * Note that sources that have already been dispatched when 
+ * Stops a #GMainLoop from running. Any calls to g_main_loop_run()
+ * for the loop will return.
+ *
+ * Note that sources that have already been dispatched when
  * g_main_loop_quit() is called will still be executed.
  **/
-void 
+void
 g_main_loop_quit (GMainLoop *loop)
 {
   g_return_if_fail (loop != NULL);
@@ -4610,6 +4610,7 @@ g_main_loop_quit (GMainLoop *loop)
 
   LOCK_CONTEXT (loop->context);
   loop->is_running = FALSE;
+
   g_wakeup_signal (loop->context->wakeup);
 
   g_cond_broadcast (&loop->context->cond);
@@ -4638,9 +4639,9 @@ g_main_loop_is_running (GMainLoop *loop)
 /**
  * g_main_loop_get_context:
  * @loop: a #GMainLoop.
- * 
+ *
  * Returns the #GMainContext of @loop.
- * 
+ *
  * Returns: (transfer none): the #GMainContext of @loop
  **/
 GMainContext *
@@ -4648,7 +4649,7 @@ g_main_loop_get_context (GMainLoop *loop)
 {
   g_return_val_if_fail (loop != NULL, NULL);
   g_return_val_if_fail (g_atomic_int_get (&loop->ref_count) > 0, NULL);
- 
+
   return loop->context;
 }
 
@@ -4825,9 +4826,9 @@ g_main_context_add_poll_unlocked (GMainContext *context,
 
 /**
  * g_main_context_remove_poll:
- * @context:a #GMainContext 
+ * @context:a #GMainContext
  * @fd: a #GPollFD descriptor previously added with g_main_context_add_poll()
- * 
+ *
  * Removes file descriptor from the set of file descriptors to be
  * polled for a particular context.
  **/
