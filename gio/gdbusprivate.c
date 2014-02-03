@@ -335,6 +335,8 @@ typedef enum {
     PENDING_CLOSE
 } OutputPending;
 
+static void continue_writing (GDBusWorker *worker);
+
 struct GDBusWorker
 {
   volatile gint                       ref_count;
@@ -577,7 +579,10 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
 
   /* If already stopped, don't even process the reply */
   if (g_atomic_int_get (&worker->stopped))
-    goto out;
+    {
+      worker->close_expected = TRUE;
+      goto out;
+    }
 
   error = NULL;
   if (worker->socket == NULL)
@@ -672,21 +677,16 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
        * if the GDBusConnection tells us to close (either via
        * _g_dbus_worker_stop, which is called on last-unref, or directly),
        * so a cancelled read must mean our connection was closed locally.
-       *
-       * If we're closing, other errors are possible - notably,
-       * G_IO_ERROR_CLOSED can be seen if we close the stream with an async
-       * read in-flight. It seems sensible to treat all read errors during
-       * closing as an expected thing that doesn't trip exit-on-close.
-       *
-       * Because close_expected can't be set until we get into the worker
-       * thread, but the cancellable is signalled sooner (from another
-       * thread), we do still need to check the error.
        */
-      if (worker->close_expected ||
-          g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-        _g_dbus_worker_emit_disconnected (worker, FALSE, NULL);
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          _g_dbus_worker_emit_disconnected (worker, FALSE, NULL);
+          worker->close_expected = TRUE;
+        }
       else
-        _g_dbus_worker_emit_disconnected (worker, TRUE, error);
+        {
+          _g_dbus_worker_emit_disconnected (worker, TRUE, error);
+        }
 
       g_error_free (error);
       goto out;
@@ -815,6 +815,13 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
  out:
   g_mutex_unlock (&worker->read_lock);
 
+  /* If need to close the stream, make sure the output logic runs its course.
+   * Because this is the worker thread, we can read these struct members
+   * without holding the lock: no other thread ever modifies them.
+   */
+  if (worker->close_expected && worker->output_pending == PENDING_NONE)
+    continue_writing (worker);
+
   /* gives up the reference acquired when calling g_input_stream_read_async() */
   _g_dbus_worker_unref (worker);
 }
@@ -823,8 +830,8 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
 static void
 _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
 {
-  /* Note that we do need to keep trying to read even if close_expected is
-   * true, because only failing a read causes us to signal 'closed'.
+  /* We need to keep trying to read, because only failing a read
+   * causes us to signal 'closed'.
    */
 
   /* if bytes_wanted is zero, it means start reading a message */
@@ -1145,8 +1152,6 @@ write_message_finish (GAsyncResult   *res,
 }
 /* ---------------------------------------------------------------------------------------------------- */
 
-static void continue_writing (GDBusWorker *worker);
-
 typedef struct
 {
   GDBusWorker *worker;
@@ -1445,12 +1450,15 @@ continue_writing (GDBusWorker *worker)
   /* if we want to close the connection, that takes precedence */
   if (worker->pending_close_attempts != NULL)
     {
-      worker->close_expected = TRUE;
-      worker->output_pending = PENDING_CLOSE;
+      /* close only once the read is finished */
+      if (worker->close_expected)
+        {
+          worker->output_pending = PENDING_CLOSE;
 
-      g_io_stream_close_async (worker->stream, G_PRIORITY_DEFAULT,
-                               NULL, iostream_close_cb,
-                               _g_dbus_worker_ref (worker));
+          g_io_stream_close_async (worker->stream, G_PRIORITY_DEFAULT,
+                                   NULL, iostream_close_cb,
+                                   _g_dbus_worker_ref (worker));
+        }
     }
   else
     {
@@ -1558,7 +1566,6 @@ continue_writing_in_idle_cb (gpointer user_data)
 /*
  * @write_data: (transfer full) (allow-none):
  * @flush_data: (transfer full) (allow-none):
- * @close_data: (transfer full) (allow-none):
  *
  * Can be called from any thread
  *
@@ -1568,18 +1575,13 @@ continue_writing_in_idle_cb (gpointer user_data)
 static void
 schedule_writing_unlocked (GDBusWorker        *worker,
                            MessageToWriteData *write_data,
-                           FlushData          *flush_data,
-                           CloseData          *close_data)
+                           FlushData          *flush_data)
 {
   if (write_data != NULL)
     g_queue_push_tail (worker->write_queue, write_data);
 
   if (flush_data != NULL)
     worker->write_pending_flushes = g_list_prepend (worker->write_pending_flushes, flush_data);
-
-  if (close_data != NULL)
-    worker->pending_close_attempts = g_list_prepend (worker->pending_close_attempts,
-                                                     close_data);
 
   /* If we had output pending, the next bit of output will happen
    * automatically when it finishes, so we only need to do this
@@ -1629,7 +1631,7 @@ _g_dbus_worker_send_message (GDBusWorker    *worker,
   data->blob_size = blob_len;
 
   g_mutex_lock (&worker->write_lock);
-  schedule_writing_unlocked (worker, data, NULL, NULL);
+  schedule_writing_unlocked (worker, data, NULL);
   g_mutex_unlock (&worker->write_lock);
 }
 
@@ -1710,13 +1712,12 @@ _g_dbus_worker_close (GDBusWorker         *worker,
       (cancellable == NULL ? NULL : g_object_ref (cancellable));
   close_data->result = (result == NULL ? NULL : g_object_ref (result));
 
-  /* Don't set worker->close_expected here - we're in the wrong thread.
-   * It'll be set before the actual close happens.
-   */
-  g_cancellable_cancel (worker->cancellable);
   g_mutex_lock (&worker->write_lock);
-  schedule_writing_unlocked (worker, NULL, NULL, close_data);
+  worker->pending_close_attempts = g_list_prepend (worker->pending_close_attempts,
+                                                   close_data);
   g_mutex_unlock (&worker->write_lock);
+
+  g_cancellable_cancel (worker->cancellable);
 }
 
 /* This can be called from any thread - frees worker. Note that
@@ -1786,7 +1787,7 @@ _g_dbus_worker_flush_sync (GDBusWorker    *worker,
       data->number_to_wait_for = worker->write_num_messages_written + pending_writes;
       g_mutex_lock (&data->mutex);
 
-      schedule_writing_unlocked (worker, NULL, data, NULL);
+      schedule_writing_unlocked (worker, NULL, data);
     }
   g_mutex_unlock (&worker->write_lock);
 
