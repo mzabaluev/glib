@@ -835,13 +835,14 @@ g_data_input_stream_read_line_utf8 (GDataInputStream  *stream,
 				    GCancellable      *cancellable,
 				    GError           **error)
 {
+  gsize bytes_read = 0;
   char *res;
 
-  res = g_data_input_stream_read_line (stream, length, cancellable, error);
+  res = g_data_input_stream_read_line (stream, &bytes_read, cancellable, error);
   if (!res)
     return NULL;
-  
-  if (!g_utf8_validate (res, -1, NULL))
+
+  if (!g_utf8_validate (res, bytes_read, NULL))
     {
       g_set_error_literal (error, G_CONVERT_ERROR,
 			   G_CONVERT_ERROR_ILLEGAL_SEQUENCE,
@@ -849,6 +850,10 @@ g_data_input_stream_read_line_utf8 (GDataInputStream  *stream,
       g_free (res);
       return NULL;
     }
+
+  if (length)
+    *length = bytes_read;
+
   return res;
 }
 
@@ -1243,13 +1248,14 @@ g_data_input_stream_read_line_finish_utf8 (GDataInputStream  *stream,
 					   gsize             *length,
 					   GError           **error)
 {
+  gsize bytes_read = 0;
   gchar *res;
 
-  res = g_data_input_stream_read_line_finish (stream, result, length, error);
+  res = g_data_input_stream_read_line_finish (stream, result, &bytes_read, error);
   if (!res)
     return NULL;
 
-  if (!g_utf8_validate (res, -1, NULL))
+  if (!g_utf8_validate (res, bytes_read, NULL))
     {
       g_set_error_literal (error, G_CONVERT_ERROR,
 			   G_CONVERT_ERROR_ILLEGAL_SEQUENCE,
@@ -1257,6 +1263,9 @@ g_data_input_stream_read_line_finish_utf8 (GDataInputStream  *stream,
       g_free (res);
       return NULL;
     }
+
+  if (length)
+    *length = bytes_read;
   return res;
 }
 
