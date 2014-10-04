@@ -486,7 +486,8 @@ g_file_get_uri_scheme (GFile *file)
  *
  * This call does no blocking I/O.
  *
- * Returns: (nullable): string containing the #GFile's base name, or
+ * Returns: (nullable) (transfer full) (array zero-terminated=1) (element-type guint8):
+ *     string containing the #GFile's base name, or
  *     %NULL if given #GFile is invalid. The returned string should be
  *     freed with g_free() when no longer needed.
  */
