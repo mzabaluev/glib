@@ -64,6 +64,9 @@ GSocketAddress *g_unix_socket_address_new_with_type   (const gchar            *p
                                                        GUnixSocketAddressType  type);
 GLIB_AVAILABLE_IN_ALL
 const char *    g_unix_socket_address_get_path        (GUnixSocketAddress *address);
+GLIB_AVAILABLE_IN_2_44
+const char *    g_unix_socket_address_get_path_full   (GUnixSocketAddress *address,
+                                                       gsize *length);
 GLIB_AVAILABLE_IN_ALL
 gsize           g_unix_socket_address_get_path_len    (GUnixSocketAddress *address);
 GLIB_AVAILABLE_IN_ALL

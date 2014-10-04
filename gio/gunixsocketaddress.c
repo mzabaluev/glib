@@ -439,6 +439,30 @@ g_unix_socket_address_get_path (GUnixSocketAddress *address)
 }
 
 /**
+ * g_unix_socket_address_get_path_full: (rename-to g_unix_socket_address_get_path)
+ * @address: a #GInetSocketAddress
+ * @length: (out): receives the length of the returned path
+ *
+ * Gets @address's path, or for abstract sockets the "name".
+ *
+ * Guaranteed to be zero-terminated, but an abstract socket
+ * may contain embedded zeros, and thus you should use the
+ * value returned in @length as the true length of this string.
+ *
+ * Returns: (array length=length) (element-type guint8) (transfer none):
+ *          the path for @address
+ *
+ * Since: 2.44
+ */
+const char *
+g_unix_socket_address_get_path_full (GUnixSocketAddress *address,
+                                     gsize *length)
+{
+  *length = address->priv->path_len;
+  return address->priv->path;
+}
+
+/**
  * g_unix_socket_address_get_path_len:
  * @address: a #GInetSocketAddress
  *
