@@ -1657,7 +1657,7 @@ g_bookmark_file_load_from_data (GBookmarkFile  *bookmark,
 /**
  * g_bookmark_file_load_from_file:
  * @bookmark: an empty #GBookmarkFile struct
- * @filename: the path of a filename to load, in the GLib file name encoding
+ * @filename: (type filename): the path of a filename to load, in the GLib file name encoding
  * @error: return location for a #GError, or %NULL
  *
  * Loads a desktop bookmark file into an empty #GBookmarkFile structure.

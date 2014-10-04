@@ -74,7 +74,8 @@ g_vfs_is_active (GVfs *vfs)
 /**
  * g_vfs_get_file_for_path:
  * @vfs: a #GVfs.
- * @path: a string containing a VFS path.
+ * @path: (type filename): a string containing a VFS path,
+ *     in the GLib filename encoding.
  *
  * Gets a #GFile for @path.
  *

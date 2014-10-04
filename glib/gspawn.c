@@ -105,7 +105,7 @@ G_DEFINE_QUARK (g-spawn-exit-error-quark, g_spawn_exit_error)
 
 /**
  * g_spawn_async:
- * @working_directory: (allow-none): child's current working directory, or %NULL to inherit parent's
+ * @working_directory: (type filename) (nullable): child's current working directory, or %NULL to inherit parent's
  * @argv: (array zero-terminated=1): child's argument vector
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's
  * @flags: flags from #GSpawnFlags
@@ -215,7 +215,7 @@ read_data (GString *str,
 
 /**
  * g_spawn_sync:
- * @working_directory: (allow-none): child's current working directory, or %NULL to inherit parent's
+ * @working_directory: (type filename) (nullable): child's current working directory, or %NULL to inherit parent's
  * @argv: (array zero-terminated=1): child's argument vector
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's
  * @flags: flags from #GSpawnFlags
@@ -467,7 +467,7 @@ g_spawn_sync (const gchar          *working_directory,
 
 /**
  * g_spawn_async_with_pipes:
- * @working_directory: (allow-none): child's current working directory, or %NULL to inherit parent's, in the GLib file name encoding
+ * @working_directory: (type filename) (nullable): child's current working directory, or %NULL to inherit parent's, in the GLib file name encoding
  * @argv: (array zero-terminated=1): child's argument vector, in the GLib file name encoding
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's, in the GLib file name encoding
  * @flags: flags from #GSpawnFlags

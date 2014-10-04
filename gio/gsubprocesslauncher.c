@@ -324,7 +324,7 @@ g_subprocess_launcher_getenv (GSubprocessLauncher *self,
 /**
  * g_subprocess_launcher_set_cwd:
  * @self: a #GSubprocess
- * @cwd: the cwd for launched processes
+ * @cwd: (type filename): the cwd for launched processes
  *
  * Sets the current working directory that processes will be launched
  * with.
@@ -407,7 +407,7 @@ assign_fd (gint *fd_ptr, gint fd)
 /**
  * g_subprocess_launcher_set_stdin_file_path:
  * @self: a #GSubprocessLauncher
- * @path: a filename or %NULL
+ * @path: (type filename) (nullable): a filename or %NULL
  *
  * Sets the file path to use as the stdin for spawned processes.
  *
@@ -470,7 +470,7 @@ g_subprocess_launcher_take_stdin_fd (GSubprocessLauncher *self,
 /**
  * g_subprocess_launcher_set_stdout_file_path:
  * @self: a #GSubprocessLauncher
- * @path: a filename or %NULL
+ * @path: (type filename) (nullable): a filename or %NULL
  *
  * Sets the file path to use as the stdout for spawned processes.
  *
@@ -533,7 +533,7 @@ g_subprocess_launcher_take_stdout_fd (GSubprocessLauncher *self,
 /**
  * g_subprocess_launcher_set_stderr_file_path:
  * @self: a #GSubprocessLauncher
- * @path: a filename or %NULL
+ * @path: (type filename) (nullable): a filename or %NULL
  *
  * Sets the file path to use as the stderr for spawned processes.
  *

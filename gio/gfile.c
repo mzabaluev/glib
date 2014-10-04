@@ -510,8 +510,8 @@ g_file_get_basename (GFile *file)
  *
  * This call does no blocking I/O.
  *
- * Returns: (nullable): string containing the #GFile's path, or %NULL
- *     if no such path exists. The returned string should be freed
+ * Returns: (type filename) (nullable): string containing the #GFile's path,
+ *     or %NULL if no such path exists. The returned string should be freed
  *     with g_free() when no longer needed.
  */
 char *
@@ -6271,8 +6271,8 @@ g_file_real_copy_finish (GFile        *file,
 
 /**
  * g_file_new_for_path:
- * @path: a string containing a relative or absolute path.
- *     The string must be encoded in the glib filename encoding.
+ * @path: (type filename): a string containing a relative or absolute path.
+ *     The string must be encoded in the GLib filename encoding.
  *
  * Constructs a #GFile for a given path. This operation never
  * fails, but the returned object might not support any I/O

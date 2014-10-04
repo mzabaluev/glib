@@ -1688,10 +1688,10 @@ g_filename_from_uri (const gchar *uri,
 
 /**
  * g_filename_to_uri:
- * @filename: an absolute filename specified in the GLib file name encoding,
- *            which is the on-disk file name bytes on Unix, and UTF-8 on 
- *            Windows
- * @hostname: (allow-none): A UTF-8 encoded hostname, or %NULL for none.
+ * @filename: (type filename): an absolute filename specified in the GLib
+ *            file name encoding, which is the on-disk file name bytes on
+ *            Unix, and UTF-8 on Windows.
+ * @hostname: (nullable): A UTF-8 encoded hostname, or %NULL for none.
  * @error: location to store the error occurring, or %NULL to ignore
  *         errors. Any of the errors in #GConvertError may occur.
  * 
@@ -1838,7 +1838,7 @@ g_uri_list_extract_uris (const gchar *uri_list)
 
 /**
  * g_filename_display_basename:
- * @filename: an absolute pathname in the GLib file name encoding
+ * @filename: (type filename): an absolute pathname in the GLib file name encoding
  *
  * Returns the display basename for the particular filename, guaranteed
  * to be valid UTF-8. The display name might not be identical to the filename,
@@ -1878,7 +1878,7 @@ g_filename_display_basename (const gchar *filename)
 
 /**
  * g_filename_display_name:
- * @filename: a pathname hopefully in the GLib file name encoding
+ * @filename: (type filename): a pathname hopefully in the GLib file name encoding
  * 
  * Converts a filename into a valid UTF-8 string. The conversion is 
  * not necessarily reversible, so you should keep the original around 
