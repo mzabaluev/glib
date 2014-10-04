@@ -498,7 +498,7 @@ g_data_output_stream_put_uint64 (GDataOutputStream  *stream,
 /**
  * g_data_output_stream_put_string:
  * @stream: a #GDataOutputStream.
- * @str: a string.
+ * @str: (array zero-terminated=1) (element-type guint8): a string.
  * @cancellable: (allow-none): optional #GCancellable object, %NULL to ignore.
  * @error: a #GError, %NULL to ignore.
  * 
