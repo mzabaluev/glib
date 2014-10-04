@@ -864,6 +864,33 @@ strdup_len (const gchar *string,
   return g_strndup (string, real_len);
 }
 
+static gchar *
+convert_to_utf8(const gchar  *opsysstring,
+                gssize        len,
+                const gchar  *charset,
+                gsize        *bytes_read,
+                gsize        *bytes_written,
+                GError      **error)
+{
+  gchar *res;
+  gsize res_len = 0;
+
+  res =  g_convert (opsysstring, len,
+                    "UTF-8", charset, bytes_read, &res_len, error);
+
+  if (res && memchr (res, '\0', res_len))
+    {
+      g_set_error_literal (error, G_CONVERT_ERROR, G_CONVERT_ERROR_ILLEGAL_SEQUENCE,
+                           _("Invalid byte sequence in conversion input"));
+      g_free (res);
+      res = NULL;
+    }
+
+  if (bytes_written)
+    *bytes_written = res_len;
+  return res;
+}
+
 /**
  * g_locale_to_utf8:
  * @opsysstring:   a string in the encoding of the current locale. On Windows
@@ -904,8 +931,8 @@ g_locale_to_utf8 (const gchar  *opsysstring,
   if (g_get_charset (&charset))
     return strdup_len (opsysstring, len, bytes_read, bytes_written, error);
   else
-    return g_convert (opsysstring, len, 
-		      "UTF-8", charset, bytes_read, bytes_written, error);
+    return convert_to_utf8 (opsysstring, len, charset, bytes_read,
+                            bytes_written, error);
 }
 
 /**
@@ -1153,8 +1180,8 @@ g_filename_to_utf8 (const gchar *opsysstring,
   if (get_filename_charset (&charset))
     return strdup_len (opsysstring, len, bytes_read, bytes_written, error);
   else
-    return g_convert (opsysstring, len, 
-		      "UTF-8", charset, bytes_read, bytes_written, error);
+    return convert_to_utf8 (opsysstring, len, charset, bytes_read,
+                            bytes_written, error);
 }
 
 #if defined (G_OS_WIN32) && !defined (_WIN64)
@@ -1180,8 +1207,8 @@ g_filename_to_utf8 (const gchar *opsysstring,
   if (g_get_charset (&charset))
     return strdup_len (opsysstring, len, bytes_read, bytes_written, error);
   else
-    return g_convert (opsysstring, len, 
-		      "UTF-8", charset, bytes_read, bytes_written, error);
+    return convert_to_utf8 (opsysstring, len, charset, bytes_read,
+                            bytes_written, error);
 }
 
 #endif

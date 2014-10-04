@@ -700,6 +700,42 @@ test_no_conv (void)
   g_error_free (error);
 }
 
+static void
+test_locale_to_utf8_inner_nul (void)
+{
+  if (g_test_subprocess ())
+    {
+      GError *err = NULL;
+      gsize bytes_converted;
+
+      g_setenv ("CHARSET", "US-ASCII", TRUE);
+      g_locale_to_utf8 ("\0", 1, NULL, &bytes_converted, &err);
+
+      g_assert_error (err, G_CONVERT_ERROR, G_CONVERT_ERROR_ILLEGAL_SEQUENCE);
+      return;
+    }
+  g_test_trap_subprocess (NULL, 0, 0);
+  g_test_trap_assert_passed ();
+}
+
+static void
+test_filename_to_utf8_inner_nul (void)
+{
+  if (g_test_subprocess ())
+    {
+      GError *err = NULL;
+      gsize bytes_converted;
+
+      g_setenv ("G_FILENAME_ENCODING", "US-ASCII", TRUE);
+      g_filename_to_utf8 ("\0", 1, NULL, &bytes_converted, &err);
+
+      g_assert_error (err, G_CONVERT_ERROR, G_CONVERT_ERROR_ILLEGAL_SEQUENCE);
+      return;
+    }
+  g_test_trap_subprocess (NULL, 0, 0);
+  g_test_trap_assert_passed ();
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -712,6 +748,8 @@ main (int argc, char *argv[])
   g_test_add_func ("/conversion/unicode", test_unicode_conversions);
   g_test_add_func ("/conversion/filename-utf8", test_filename_utf8);
   g_test_add_func ("/conversion/filename-display", test_filename_display);
+  g_test_add_func ("/conversion/locale-to-utf8-inner-nul", test_locale_to_utf8_inner_nul);
+  g_test_add_func ("/conversion/filename-to-utf8-inner-nul", test_filename_to_utf8_inner_nul);
 
   return g_test_run ();
 }
