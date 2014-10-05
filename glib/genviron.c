@@ -70,13 +70,14 @@ g_environ_find (gchar       **envp,
  * @envp: (allow-none) (array zero-terminated=1) (transfer none): an environment
  *     list (eg, as returned from g_get_environ()), or %NULL
  *     for an empty environment list
- * @variable: the environment variable to get, in the GLib file name
- *     encoding
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *     the environment variable to get
  *
  * Returns the value of the environment variable @variable in the
  * provided list @envp.
  *
- * Returns: the value of the environment variable, or %NULL if
+ * Returns: (nullable) (array zero-terminated=1) (element-type guint8) (transfer none):
+ *     the value of the environment variable, or %NULL if
  *     the environment variable is not set in @envp. The returned
  *     string is owned by @envp, and will be freed if @variable is
  *     set or unset again.
@@ -104,8 +105,10 @@ g_environ_getenv (gchar       **envp,
  *     environment list that can be freed using g_strfreev() (e.g., as
  *     returned from g_get_environ()), or %NULL for an empty
  *     environment list
- * @variable: the environment variable to set, must not contain '='
- * @value: the value for to set the variable to
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the environment variable to set, must not contain '='
+ * @value: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the value for to set the variable to
  * @overwrite: whether to change the variable if it already exists
  *
  * Sets the environment variable @variable in the provided list
@@ -190,7 +193,8 @@ g_environ_unsetenv_internal (gchar        **envp,
  * @envp: (allow-none) (array zero-terminated=1) (transfer full): an environment
  *     list that can be freed using g_strfreev() (e.g., as returned from g_get_environ()), 
  *     or %NULL for an empty environment list
- * @variable: the environment variable to remove, must not contain '='
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *     the environment variable to remove, must not contain '='
  *
  * Removes the environment variable @variable from the provided
  * environment @envp.
@@ -218,8 +222,8 @@ g_environ_unsetenv (gchar       **envp,
 
 /**
  * g_getenv:
- * @variable: the environment variable to get, in the GLib file name
- *     encoding
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *     the environment variable to get
  *
  * Returns the value of an environment variable.
  *
@@ -229,7 +233,8 @@ g_environ_unsetenv (gchar       **envp,
  * On Windows, in case the environment variable's value contains
  * references to other environment variables, they are expanded.
  *
- * Returns: the value of the environment variable, or %NULL if
+ * Returns: (nullable) (array zero-terminated=1) (element-type guint8) (transfer none):
+ *     the value of the environment variable, or %NULL if
  *     the environment variable is not found. The returned string
  *     may be overwritten by the next call to g_getenv(), g_setenv()
  *     or g_unsetenv().
@@ -244,8 +249,10 @@ g_getenv (const gchar *variable)
 
 /**
  * g_setenv:
- * @variable: the environment variable to set, must not contain '='.
- * @value: the value for to set the variable to.
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the environment variable to set, must not contain '='.
+ * @value: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the value for to set the variable to.
  * @overwrite: whether to change the variable if it already exists.
  *
  * Sets an environment variable. Both the variable's name and value
@@ -314,7 +321,8 @@ extern char **environ;
 
 /**
  * g_unsetenv:
- * @variable: the environment variable to remove, must not contain '='
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *            the environment variable to remove, must not contain '='
  *
  * Removes an environment variable from the environment.
  *

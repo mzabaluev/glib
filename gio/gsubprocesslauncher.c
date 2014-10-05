@@ -254,8 +254,10 @@ g_subprocess_launcher_set_environ (GSubprocessLauncher  *self,
 /**
  * g_subprocess_launcher_setenv:
  * @self: a #GSubprocess
- * @variable: the environment variable to set, must not contain '='
- * @value: the new value for the variable
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the environment variable to set, must not contain '='
+ * @value: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *             the new value for the variable
  * @overwrite: whether to change the variable if it already exists
  *
  * Sets the environment variable @variable in the environment of
@@ -280,7 +282,8 @@ g_subprocess_launcher_setenv (GSubprocessLauncher *self,
 /**
  * g_subprocess_launcher_unsetenv:
  * @self: a #GSubprocess
- * @variable: the environment variable to unset, must not contain '='
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *            the environment variable to unset, must not contain '='
  *
  * Removes the environment variable @variable from the environment of
  * processes launched from this launcher.
@@ -301,7 +304,8 @@ g_subprocess_launcher_unsetenv (GSubprocessLauncher *self,
 /**
  * g_subprocess_launcher_getenv:
  * @self: a #GSubprocess
- * @variable: the environment variable to get
+ * @variable: (array zero-terminated=1) (element-type guint8) (transfer none):
+ *            the environment variable to get
  *
  * Returns the value of the environment variable @variable in the
  * environment of processes launched from this launcher.
@@ -310,7 +314,8 @@ g_subprocess_launcher_unsetenv (GSubprocessLauncher *self,
  * means that it can be an arbitrary byte string.  On Windows, it will
  * be UTF-8.
  *
- * Returns: the value of the environment variable, %NULL if unset
+ * Returns: (nullable) (array zero-terminated=1) (element-type guint8) (transfer none):
+ *          the value of the environment variable, %NULL if unset
  *
  * Since: 2.40
  **/
