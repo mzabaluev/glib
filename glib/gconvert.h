@@ -85,6 +85,14 @@ gsize  g_iconv        (GIConv        converter,
 		       gsize        *inbytes_left,
 		       gchar       **outbuf,
 		       gsize        *outbytes_left);
+GLIB_AVAILABLE_IN_2_44
+gssize g_iconv_convert (GIConv       converter,
+                        const gchar *inbuf,
+                        gsize        inbuf_len,
+                        gchar       *outbuf,
+                        gsize        outbuf_len,
+                        gsize       *inbytes_read,
+                        gsize       *outbytes_written);
 GLIB_AVAILABLE_IN_ALL
 gint   g_iconv_close  (GIConv        converter);
 

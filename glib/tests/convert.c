@@ -25,6 +25,7 @@
 #undef G_DISABLE_ASSERT
 #undef G_LOG_DOMAIN
 
+#include <errno.h>
 #include <string.h>
 
 #include <glib.h>
@@ -700,6 +701,45 @@ test_no_conv (void)
   g_error_free (error);
 }
 
+static void
+test_iconv_convert ()
+{
+  static const char oldskool_str[] = "\xA1";
+  char utf8_buf[2];
+  gsize bytes_read, bytes_written;
+  gssize nconv;
+  GIConv cd;
+  gint ret;
+
+  cd = g_iconv_open ("UTF-8", "ISO-8859-1");
+  if (cd == (GIConv)-1)
+    {
+      g_test_skip ("Conversion from ISO-8859-1 to UTF-8 is unavailable");
+      return;
+    }
+
+  nconv = g_iconv_convert (cd, oldskool_str, 1, utf8_buf, 1,
+                           &bytes_read, &bytes_written);
+  g_assert_cmpint (nconv, ==, -1);
+  g_assert_cmpint (errno, ==, E2BIG);
+  g_assert_cmpuint (bytes_read, ==, 0);
+  g_assert_cmpuint (bytes_written, ==, 0);
+  nconv = g_iconv_convert (cd, oldskool_str, 1, utf8_buf, 2,
+                           &bytes_read, &bytes_written);
+  g_assert_cmpint (nconv, >=, 0);
+  g_assert_cmpuint (bytes_read, ==, 1);
+  g_assert_cmpuint (bytes_written, ==, 2);
+  g_assert_cmphex ((guchar) utf8_buf[0], ==, 0xC2);
+  g_assert_cmphex ((guchar) utf8_buf[1], ==, 0xA1);
+  nconv = g_iconv_convert (cd, NULL, 0, utf8_buf, 1,
+                           NULL, &bytes_written);
+  g_assert_cmpint (nconv, ==, 0);
+  g_assert_cmpuint (bytes_written, ==, 0);
+
+  ret = g_iconv_close (cd);
+  g_assert_cmpint (ret, ==, 0);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -712,6 +752,7 @@ main (int argc, char *argv[])
   g_test_add_func ("/conversion/unicode", test_unicode_conversions);
   g_test_add_func ("/conversion/filename-utf8", test_filename_utf8);
   g_test_add_func ("/conversion/filename-display", test_filename_display);
+  g_test_add_func ("/conversion/iconv-convert", test_iconv_convert);
 
   return g_test_run ();
 }

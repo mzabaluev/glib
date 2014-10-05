@@ -280,6 +280,76 @@ g_iconv (GIConv   converter,
 }
 
 /**
+ * g_iconv_convert:
+ * @converter: conversion descriptor from g_iconv_open()
+ * @inbuf: (nullable) (array length=inbuf_len) (element-type guint8) (transfer none):
+ *             bytes to convert, or %NULL to finalize the potentially stateful
+ *             encoding.
+ * @inbuf_len: the number of bytes in @inbuf
+ * @outbuf: (nullable) (array length=outbuf_len) (element-type guint8) (transfer none):
+ *             converted output bytes
+ * @outbuf_len: bytes available to fill in @outbuf
+ * @inbytes_read: (out) (optional): the number of input bytes converted
+ * @outbytes_written: (out) (optional): the number of bytes received by @outbuf
+ *
+ * A wrapper around iconv() with a parameter signature that should
+ * be more friendly to introspection-based language bindings.
+ *
+ * GLib provides g_convert() and g_locale_to_utf8() which are likely
+ * more convenient than the raw iconv wrappers.
+ *
+ * Returns: count of non-reversible conversions, or -1 on error
+ *
+ * Since: 2.44
+ **/
+gssize
+g_iconv_convert (GIConv       converter,
+                 const gchar *inbuf,
+                 gsize        inbuf_len,
+                 gchar       *outbuf,
+                 gsize        outbuf_len,
+                 gsize       *inbytes_read,
+                 gsize       *outbytes_written)
+{
+  iconv_t cd = (iconv_t)converter;
+  gsize inbuf_avail = inbuf_len;
+  gsize outbuf_avail = outbuf_len;
+  gsize nconv;
+  const gchar **pin;
+  gchar **pout;
+  gsize *pin_avail, *pout_avail;
+
+  if (G_LIKELY (inbuf))
+    {
+      pin = &inbuf;
+      pin_avail = &inbuf_avail;
+    }
+  else
+    {
+      pin = NULL;
+      pin_avail = NULL;
+    }
+  if (G_LIKELY (outbuf))
+    {
+      pout = &outbuf;
+      pout_avail = &outbuf_avail;
+    }
+  else
+    {
+      pout = NULL;
+      pout_avail = NULL;
+    }
+
+  nconv = iconv(cd, (char **) pin, pin_avail, pout, pout_avail);
+
+  if (inbytes_read)
+    *inbytes_read = inbuf_len - inbuf_avail;
+  if (outbytes_written)
+    *outbytes_written = outbuf_len - outbuf_avail;
+  return nconv;
+}
+
+/**
  * g_iconv_close:
  * @converter: a conversion descriptor from g_iconv_open()
  *
