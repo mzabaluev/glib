@@ -103,7 +103,7 @@ g_utf8_get_charset_internal (const char  *raw_data,
     {
       *a = charset;
 
-      if (charset && strstr (charset, "UTF-8"))
+      if (charset && strcmp (charset, "UTF-8") == 0)
         return TRUE;
       else
         return FALSE;
@@ -121,7 +121,7 @@ g_utf8_get_charset_internal (const char  *raw_data,
     {
       *a = charset;
 
-      if (charset && strstr (charset, "UTF-8"))
+      if (charset && strcmp (charset, "UTF-8") == 0)
         return TRUE;
       else
         return FALSE;

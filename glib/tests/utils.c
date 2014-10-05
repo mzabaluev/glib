@@ -336,6 +336,22 @@ test_codeset2 (void)
 }
 
 static void
+test_charset_impostor (void)
+{
+  if (g_test_subprocess ())
+    {
+      gboolean is_utf8;
+      const gchar *c;
+      g_setenv ("CHARSET", "derpderpWTFizUTF-8)", TRUE);
+      is_utf8 = g_get_charset (&c);
+      g_assert (!is_utf8);
+      return;
+    }
+  g_test_trap_subprocess (NULL, 0, 0);
+  g_test_trap_assert_passed ();
+}
+
+static void
 test_basename (void)
 {
   const gchar *path = "/path/to/a/file/deep/down.sh";
@@ -581,6 +597,7 @@ main (int   argc,
   g_test_add_func ("/utils/debug", test_debug);
   g_test_add_func ("/utils/codeset", test_codeset);
   g_test_add_func ("/utils/codeset2", test_codeset2);
+  g_test_add_func ("/utils/charset-impostor", test_charset_impostor);
   g_test_add_func ("/utils/basename", test_basename);
   g_test_add_func ("/utils/gettext", test_gettext);
   g_test_add_func ("/utils/username", test_username);
