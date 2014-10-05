@@ -109,8 +109,8 @@ G_DEFINE_QUARK (g-spawn-exit-error-quark, g_spawn_exit_error)
  * @argv: (array zero-terminated=1): child's argument vector
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's
  * @flags: flags from #GSpawnFlags
- * @child_setup: (scope async) (allow-none): function to run in the child just before exec()
- * @user_data: (closure): user data for @child_setup
+ * @child_setup: (skip) (scope async) (nullable): function to run in the child just before exec()
+ * @user_data: (skip) (closure child_setup): user data for @child_setup
  * @child_pid: (out) (allow-none): return location for child process reference, or %NULL
  * @error: return location for error
  * 
@@ -219,8 +219,8 @@ read_data (GString *str,
  * @argv: (array zero-terminated=1): child's argument vector
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's
  * @flags: flags from #GSpawnFlags
- * @child_setup: (scope async) (allow-none): function to run in the child just before exec()
- * @user_data: (closure): user data for @child_setup
+ * @child_setup: (skip) (scope async) (nullable): function to run in the child just before exec()
+ * @user_data: (skip) (closure child_setup): user data for @child_setup
  * @standard_output: (out) (array zero-terminated=1) (element-type guint8) (allow-none): return location for child output, or %NULL
  * @standard_error: (out) (array zero-terminated=1) (element-type guint8) (allow-none): return location for child error messages, or %NULL
  * @exit_status: (out) (allow-none): return location for child exit status, as returned by waitpid(), or %NULL
@@ -471,8 +471,8 @@ g_spawn_sync (const gchar          *working_directory,
  * @argv: (array zero-terminated=1): child's argument vector, in the GLib file name encoding
  * @envp: (array zero-terminated=1) (allow-none): child's environment, or %NULL to inherit parent's, in the GLib file name encoding
  * @flags: flags from #GSpawnFlags
- * @child_setup: (scope async) (allow-none): function to run in the child just before exec()
- * @user_data: (closure): user data for @child_setup
+ * @child_setup: (skip) (scope async) (nullable): function to run in the child just before exec()
+ * @user_data: (skip) (closure child_setup): user data for @child_setup
  * @child_pid: (out) (allow-none): return location for child process ID, or %NULL
  * @standard_input: (out) (allow-none): return location for file descriptor to write to child's stdin, or %NULL
  * @standard_output: (out) (allow-none): return location for file descriptor to read child's stdout, or %NULL
