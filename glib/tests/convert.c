@@ -718,21 +718,21 @@ test_iconv_convert ()
       return;
     }
 
-  nconv = g_iconv_convert (cd, oldskool_str, 1, utf8_buf, 1,
-                           &bytes_read, &bytes_written);
+  nconv = g_iconv_convert (cd, oldskool_str, 1, &bytes_read,
+                           utf8_buf, 1, &bytes_written);
   g_assert_cmpint (nconv, ==, -1);
   g_assert_cmpint (errno, ==, E2BIG);
   g_assert_cmpuint (bytes_read, ==, 0);
   g_assert_cmpuint (bytes_written, ==, 0);
-  nconv = g_iconv_convert (cd, oldskool_str, 1, utf8_buf, 2,
-                           &bytes_read, &bytes_written);
+  nconv = g_iconv_convert (cd, oldskool_str, 1, &bytes_read,
+                           utf8_buf, 2, &bytes_written);
   g_assert_cmpint (nconv, >=, 0);
   g_assert_cmpuint (bytes_read, ==, 1);
   g_assert_cmpuint (bytes_written, ==, 2);
   g_assert_cmphex ((guchar) utf8_buf[0], ==, 0xC2);
   g_assert_cmphex ((guchar) utf8_buf[1], ==, 0xA1);
-  nconv = g_iconv_convert (cd, NULL, 0, utf8_buf, 1,
-                           NULL, &bytes_written);
+  nconv = g_iconv_convert (cd, NULL, 0, NULL,
+                           utf8_buf, 1, &bytes_written);
   g_assert_cmpint (nconv, ==, 0);
   g_assert_cmpuint (bytes_written, ==, 0);
 

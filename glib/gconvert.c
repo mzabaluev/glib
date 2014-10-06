@@ -286,10 +286,10 @@ g_iconv (GIConv   converter,
  *             bytes to convert, or %NULL to finalize the potentially stateful
  *             encoding.
  * @inbuf_len: the number of bytes in @inbuf
+ * @inbytes_read: (out) (optional): the number of input bytes converted
  * @outbuf: (nullable) (array length=outbuf_len) (element-type guint8) (transfer none):
  *             converted output bytes
  * @outbuf_len: bytes available to fill in @outbuf
- * @inbytes_read: (out) (optional): the number of input bytes converted
  * @outbytes_written: (out) (optional): the number of bytes received by @outbuf
  *
  * A wrapper around iconv() with a parameter signature that should
@@ -306,9 +306,9 @@ gssize
 g_iconv_convert (GIConv       converter,
                  const gchar *inbuf,
                  gsize        inbuf_len,
+                 gsize       *inbytes_read,
                  gchar       *outbuf,
                  gsize        outbuf_len,
-                 gsize       *inbytes_read,
                  gsize       *outbytes_written)
 {
   iconv_t cd = (iconv_t)converter;
