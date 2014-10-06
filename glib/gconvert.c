@@ -251,7 +251,7 @@ g_iconv_open (const gchar  *to_codeset,
 }
 
 /**
- * g_iconv:
+ * g_iconv: (skip)
  * @converter: conversion descriptor from g_iconv_open()
  * @inbuf: bytes to convert
  * @inbytes_left: inout parameter, bytes remaining to convert in @inbuf
