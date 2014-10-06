@@ -830,9 +830,9 @@ strdup_len (const gchar *string,
 	    gsize       *bytes_written,
 	    gsize       *bytes_read,
 	    GError      **error)
-	 
 {
-  gsize real_len;
+  if (len < 0)
+    len = strlen (string);
 
   if (!g_utf8_validate (string, len, NULL))
     {
@@ -845,23 +845,13 @@ strdup_len (const gchar *string,
                            _("Invalid byte sequence in conversion input"));
       return NULL;
     }
-  
-  if (len < 0)
-    real_len = strlen (string);
-  else
-    {
-      real_len = 0;
-      
-      while (real_len < len && string[real_len])
-	real_len++;
-    }
-  
-  if (bytes_read)
-    *bytes_read = real_len;
-  if (bytes_written)
-    *bytes_written = real_len;
 
-  return g_strndup (string, real_len);
+  if (bytes_read)
+    *bytes_read = len;
+  if (bytes_written)
+    *bytes_written = len;
+
+  return g_strndup (string, len);
 }
 
 static gchar *
